@@ -3951,6 +3951,18 @@ try:
 except ImportError:
     logger.debug("Account activation module not available")
 
+# Marketing & static routes blueprint
+try:
+    from marketing_routes import marketing_bp, init_marketing_routes
+    init_marketing_routes(
+        user_auth_available=USER_AUTH_AVAILABLE,
+        is_logged_in_fn=is_logged_in if USER_AUTH_AVAILABLE else (lambda: False),
+    )
+    app.register_blueprint(marketing_bp)
+    logger.info("Marketing routes blueprint registered")
+except ImportError as e:
+    logger.warning(f"Marketing routes blueprint not available: {e}")
+
 # Template filter for date formatting
 @app.template_filter('format_datetime')
 def format_datetime_filter(value):
@@ -5866,52 +5878,39 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
         logger.error(f"Error storing Tradovate accounts: {e}")
         return {"success": False, "error": str(e)}
 
-# Handle missing source map files gracefully (browsers request these automatically)
-# Source maps are optional and only used for debugging, so we return 204 No Content
-@app.route('/static/js/<path:filename>')
-def handle_static_js(filename):
-    """Handle static JS files and source maps"""
-    from flask import send_from_directory, Response
-    import os
-    
-    # If it's a source map request, return 204 (they're optional)
-    if filename.endswith('.map'):
-        return Response(status=204)  # No Content - source maps are optional
-    
-    # Otherwise try to serve the actual file
-    static_dir = os.path.join(os.path.dirname(__file__), 'static', 'js')
-    file_path = os.path.join(static_dir, filename)
-    if os.path.exists(file_path):
-        return send_from_directory(static_dir, filename)
-    
-    # File doesn't exist
-    return Response(status=404)
-
-@app.route('/static/<path:filename>')
-def handle_static_file(filename):
-    """Handle static files and source maps"""
-    from flask import send_from_directory, Response
-    import os
-    
-    # If it's a source map request, return 204 (they're optional)
-    if filename.endswith('.map'):
-        return Response(status=204)  # No Content - source maps are optional
-    
-    # Otherwise try to serve the actual file
-    static_dir = os.path.join(os.path.dirname(__file__), 'static')
-    file_path = os.path.join(static_dir, filename)
-    if os.path.exists(file_path):
-        return send_from_directory(static_dir, filename)
-    
-    # File doesn't exist
-    return Response(status=404)
-
-@app.route('/')
-def index():
-    """Root route - redirect to dashboard if logged in, otherwise show landing page."""
-    if USER_AUTH_AVAILABLE and is_logged_in():
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('pricing'))
+# MOVED TO marketing_routes.py — static file handlers + index route
+# @app.route('/static/js/<path:filename>')
+# def handle_static_js(filename):
+#     """Handle static JS files and source maps"""
+#     from flask import send_from_directory, Response
+#     import os
+#     if filename.endswith('.map'):
+#         return Response(status=204)
+#     static_dir = os.path.join(os.path.dirname(__file__), 'static', 'js')
+#     file_path = os.path.join(static_dir, filename)
+#     if os.path.exists(file_path):
+#         return send_from_directory(static_dir, filename)
+#     return Response(status=404)
+#
+# @app.route('/static/<path:filename>')
+# def handle_static_file(filename):
+#     """Handle static files and source maps"""
+#     from flask import send_from_directory, Response
+#     import os
+#     if filename.endswith('.map'):
+#         return Response(status=204)
+#     static_dir = os.path.join(os.path.dirname(__file__), 'static')
+#     file_path = os.path.join(static_dir, filename)
+#     if os.path.exists(file_path):
+#         return send_from_directory(static_dir, filename)
+#     return Response(status=404)
+#
+# @app.route('/')
+# def index():
+#     """Root route - redirect to dashboard if logged in, otherwise show landing page."""
+#     if USER_AUTH_AVAILABLE and is_logged_in():
+#         return redirect(url_for('dashboard'))
+#     return redirect(url_for('pricing'))
 
 # ============================================================================
 # DATABASE MIGRATION ENDPOINT
@@ -6151,135 +6150,96 @@ def whop_status():
 # USER AUTHENTICATION ROUTES
 # ============================================================================
 
-@app.route('/pricing')
-def pricing():
-    """Public pricing page. Accepts ?ref=CODE for affiliate link tracking."""
-    ref_code = request.args.get('ref', '').strip()
-    affiliate_links = {}
-    if ref_code:
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            is_postgres = is_using_postgres()
-            placeholder = '%s' if is_postgres else '?'
-            cursor.execute(
-                f"SELECT whop_link_platform_basic, whop_link_platform_premium, whop_link_platform_elite, "
-                f"whop_link_discord_basic, whop_link_discord_premium "
-                f"FROM affiliate_applications WHERE affiliate_code = {placeholder} AND status = 'approved'",
-                (ref_code,)
-            )
-            row = cursor.fetchone()
-            if row:
-                row_dict = dict(row)
-                affiliate_links = {k: v for k, v in row_dict.items() if v}
-            cursor.close()
-            conn.close()
-        except Exception as e:
-            logger.warning(f"Pricing affiliate lookup error: {e}")
-    return render_template('pricing.html', affiliate_links=affiliate_links, ref_code=ref_code)
+# MOVED TO marketing_routes.py — pricing + legal pages
+# @app.route('/pricing')
+# def pricing():
+#     """Public pricing page. Accepts ?ref=CODE for affiliate link tracking."""
+#     ref_code = request.args.get('ref', '').strip()
+#     affiliate_links = {}
+#     if ref_code:
+#         try:
+#             conn = get_db_connection()
+#             cursor = conn.cursor()
+#             is_postgres = is_using_postgres()
+#             placeholder = '%s' if is_postgres else '?'
+#             cursor.execute(
+#                 f"SELECT whop_link_platform_basic, whop_link_platform_premium, whop_link_platform_elite, "
+#                 f"whop_link_discord_basic, whop_link_discord_premium "
+#                 f"FROM affiliate_applications WHERE affiliate_code = {placeholder} AND status = 'approved'",
+#                 (ref_code,)
+#             )
+#             row = cursor.fetchone()
+#             if row:
+#                 row_dict = dict(row)
+#                 affiliate_links = {k: v for k, v in row_dict.items() if v}
+#             cursor.close()
+#             conn.close()
+#         except Exception as e:
+#             logger.warning(f"Pricing affiliate lookup error: {e}")
+#     return render_template('pricing.html', affiliate_links=affiliate_links, ref_code=ref_code)
+#
+# @app.route('/terms')
+# def terms():
+#     return render_template('terms.html')
+#
+# @app.route('/privacy')
+# def privacy():
+#     return render_template('privacy.html')
+#
+# @app.route('/risk-disclosure')
+# def risk_disclosure():
+#     return render_template('risk_disclosure.html')
 
 
-@app.route('/terms')
-def terms():
-    """Terms of Service page."""
-    return render_template('terms.html')
-
-
-@app.route('/privacy')
-def privacy():
-    """Privacy Policy page."""
-    return render_template('privacy.html')
-
-
-@app.route('/risk-disclosure')
-def risk_disclosure():
-    """Risk Disclosure page."""
-    return render_template('risk_disclosure.html')
-
-
-# ============================================================================
-# BLOG ROUTES
-# ============================================================================
-
-BLOG_SLUG_MAP = {
-    'tradingview-to-tradovate-automation': 'blog_post_tradingview.html',
-    'best-automation-apex-trader-funding-accounts': 'blog_post_apex.html',
-    'multi-account-futures-trading-complete-guide': 'blog_post_multi_account.html',
-}
-
-@app.route('/blog')
-def blog_index():
-    """Blog landing page."""
-    return render_template('blog_index.html')
-
-@app.route('/blog/<slug>')
-def blog_post(slug):
-    """Individual blog post by SEO slug."""
-    template = BLOG_SLUG_MAP.get(slug)
-    if template:
-        return render_template(template)
-    return redirect(url_for('blog_index'))
-
-@app.route('/sitemap.xml')
-def sitemap():
-    """Serve sitemap.xml for SEO."""
-    return send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'sitemap.xml', mimetype='application/xml')
-
-@app.route('/robots.txt')
-def robots():
-    """Serve robots.txt for crawlers."""
-    return send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'robots.txt', mimetype='text/plain')
-
-
-@app.route('/api/public/stats')
-def public_stats():
-    """
-    Public API endpoint for platform statistics.
-    Returns real counts from the database.
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Count total trades executed
-        try:
-            cursor.execute('SELECT COUNT(*) FROM recorded_trades')
-            total_trades = cursor.fetchone()[0] or 0
-        except:
-            total_trades = 0
-        
-        # Count total users
-        total_users = 0
-        if USER_AUTH_AVAILABLE:
-            try:
-                cursor.execute('SELECT COUNT(*) FROM users')
-                total_users = cursor.fetchone()[0] or 0
-            except:
-                total_users = 0
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'total_trades': total_trades,
-            'total_users': total_users,
-            'uptime': 99,
-            'support': '24/7'
-        })
-    except Exception as e:
-        logger.warning(f"Stats API error: {e}")
-        return jsonify({
-            'total_trades': 0,
-            'total_users': 0,
-            'uptime': 99,
-            'support': '24/7'
-        })
-        return jsonify({
-            'total_trades': 0,
-            'total_users': 0,
-            'uptime': 99,
-            'support': '24/7'
-        })
+# MOVED TO marketing_routes.py — blog, SEO files, public stats API
+# BLOG_SLUG_MAP = {
+#     'tradingview-to-tradovate-automation': 'blog_post_tradingview.html',
+#     'best-automation-apex-trader-funding-accounts': 'blog_post_apex.html',
+#     'multi-account-futures-trading-complete-guide': 'blog_post_multi_account.html',
+# }
+#
+# @app.route('/blog')
+# def blog_index():
+#     return render_template('blog_index.html')
+#
+# @app.route('/blog/<slug>')
+# def blog_post(slug):
+#     template = BLOG_SLUG_MAP.get(slug)
+#     if template:
+#         return render_template(template)
+#     return redirect(url_for('blog_index'))
+#
+# @app.route('/sitemap.xml')
+# def sitemap():
+#     return send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'sitemap.xml', mimetype='application/xml')
+#
+# @app.route('/robots.txt')
+# def robots():
+#     return send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'robots.txt', mimetype='text/plain')
+#
+# @app.route('/api/public/stats')
+# def public_stats():
+#     try:
+#         conn = get_db_connection()
+#         cursor = conn.cursor()
+#         try:
+#             cursor.execute('SELECT COUNT(*) FROM recorded_trades')
+#             total_trades = cursor.fetchone()[0] or 0
+#         except:
+#             total_trades = 0
+#         total_users = 0
+#         if USER_AUTH_AVAILABLE:
+#             try:
+#                 cursor.execute('SELECT COUNT(*) FROM users')
+#                 total_users = cursor.fetchone()[0] or 0
+#             except:
+#                 total_users = 0
+#         cursor.close()
+#         conn.close()
+#         return jsonify({'total_trades': total_trades, 'total_users': total_users, 'uptime': 99, 'support': '24/7'})
+#     except Exception as e:
+#         logger.warning(f"Stats API error: {e}")
+#         return jsonify({'total_trades': 0, 'total_users': 0, 'uptime': 99, 'support': '24/7'})
 
 
 @app.route('/login', methods=['GET', 'POST'])
