@@ -2407,54 +2407,34 @@ def execute_trade_simple(
                     if is_close_signal and has_existing_position:
                         logger.info(f"🔄 [{acct_name}] CLOSE SIGNAL - Closing {existing_position_side} {existing_position_qty} {local_tradovate_symbol}")
 
-                        # Cancel resting orders only if system placed TP/SL (non-strategy mode)
-                        # Strategy mode (tp_ticks=0, sl_ticks=0): TV handles exits, no orders to cancel — skip for speed
-                        if tp_ticks > 0 or sl_ticks > 0:
-                            try:
-                                close_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
-                                close_cancelled = 0
-                                for co in (close_orders or []):
-                                    co_symbol = str(co.get('symbol', '')).upper()
-                                    co_status = str(co.get('ordStatus', '')).upper()
-                                    co_id = co.get('id')
-                                    if (local_symbol_root in co_symbol and
-                                        co_status in ['WORKING', 'NEW', 'PENDINGNEW'] and co_id):
-                                        try:
-                                            await tradovate.cancel_order_smart(int(co_id), use_websocket=False)
-                                            close_cancelled += 1
-                                            try:
-                                                from ultra_simple_server import unregister_oco_pair
-                                                unregister_oco_pair(int(co_id))
-                                            except Exception:
-                                                pass
-                                        except Exception as co_cancel_err:
-                                            logger.warning(f"⚠️ [{acct_name}] Close cancel order {co_id}: {co_cancel_err}")
-                                if close_cancelled > 0:
-                                    logger.info(f"🗑️ [{acct_name}] Cancelled {close_cancelled} resting orders before close")
-                                try:
-                                    from ultra_simple_server import unregister_break_even_monitor
-                                    be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
-                                    unregister_break_even_monitor(be_key)
-                                except Exception:
-                                    pass
-                            except Exception as close_cleanup_err:
-                                logger.warning(f"⚠️ [{acct_name}] Close order cleanup failed: {close_cleanup_err}")
+                        # ONE CALL: liquidateposition closes position + cancels ALL resting orders (Bug #56)
+                        contract_id = await tradovate.get_contract_id(local_tradovate_symbol)
+                        if contract_id:
+                            logger.info(f"📤 [{acct_name}] Liquidate: {existing_position_side} {existing_position_qty} {local_tradovate_symbol} (contract {contract_id})")
+                            close_result = await tradovate.liquidate_position(int(tradovate_account_id), contract_id)
                         else:
-                            logger.info(f"⚡ [{acct_name}] Strategy mode (no TP/SL) — skipping order cancel, direct close")
+                            # Fallback: manual market close if contract ID lookup fails
+                            logger.warning(f"⚠️ [{acct_name}] Contract ID lookup failed for {local_tradovate_symbol} — falling back to market close")
+                            close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
+                            close_order_data = tradovate.create_market_order(
+                                tradovate_account_spec, local_tradovate_symbol,
+                                close_action, existing_position_qty, tradovate_account_id
+                            )
+                            close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
 
-                        # Place market order to close — side is OPPOSITE of existing position
-                        close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
-                        close_order_data = tradovate.create_market_order(
-                            tradovate_account_spec, local_tradovate_symbol,
-                            close_action, existing_position_qty, tradovate_account_id
-                        )
-                        logger.info(f"📤 [{acct_name}] Close: {close_action} {existing_position_qty} {local_tradovate_symbol}")
-                        close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
                         if close_result and close_result.get('success'):
-                            logger.info(f"✅ [{acct_name}] CLOSE filled - position closed")
+                            logger.info(f"✅ [{acct_name}] CLOSE filled + resting orders cancelled")
                         else:
                             close_err = close_result.get('error') or 'Unknown error' if close_result else 'No response'
                             logger.warning(f"⚠️ [{acct_name}] CLOSE may have failed: {close_err}")
+
+                        # Clean up internal monitors
+                        try:
+                            from ultra_simple_server import unregister_break_even_monitor
+                            be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
+                            unregister_break_even_monitor(be_key)
+                        except Exception:
+                            pass
 
                         # Signal blocking: clear on close
                         try:
@@ -2501,50 +2481,31 @@ def execute_trade_simple(
                                 # DCA MODE OFF: Close existing position first, then treat as fresh entry with bracket order
                                 logger.info(f"📊 [{acct_name}] DCA OFF - Closing existing {existing_position_side} {existing_position_qty} before fresh bracket entry")
 
-                                # Cancel all resting orders (TP/SL) for this account+symbol before close
-                                try:
-                                    dca_off_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
-                                    dca_off_cancelled = 0
-                                    for doo in (dca_off_orders or []):
-                                        doo_symbol = str(doo.get('symbol', '')).upper()
-                                        doo_status = str(doo.get('ordStatus', '')).upper()
-                                        doo_id = doo.get('id')
-                                        if (local_symbol_root in doo_symbol and
-                                            doo_status in ['WORKING', 'NEW', 'PENDINGNEW'] and doo_id):
-                                            try:
-                                                await tradovate.cancel_order_smart(int(doo_id), use_websocket=False)
-                                                dca_off_cancelled += 1
-                                                try:
-                                                    from ultra_simple_server import unregister_oco_pair
-                                                    unregister_oco_pair(int(doo_id))
-                                                except Exception:
-                                                    pass
-                                            except Exception as doo_cancel_err:
-                                                logger.warning(f"⚠️ [{acct_name}] DCA-off cancel order {doo_id}: {doo_cancel_err}")
-                                    if dca_off_cancelled > 0:
-                                        logger.info(f"🗑️ [{acct_name}] DCA-off: Cancelled {dca_off_cancelled} resting orders before close")
-                                    try:
-                                        from ultra_simple_server import unregister_break_even_monitor
-                                        be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
-                                        unregister_break_even_monitor(be_key)
-                                    except Exception:
-                                        pass
-                                except Exception as dca_off_cleanup_err:
-                                    logger.warning(f"⚠️ [{acct_name}] DCA-off order cleanup failed: {dca_off_cleanup_err}")
-
-                                # Place market order to close existing position
-                                close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
-                                close_order_data = tradovate.create_market_order(
-                                    tradovate_account_spec, local_tradovate_symbol,
-                                    close_action, existing_position_qty, tradovate_account_id
-                                )
-                                logger.info(f"📤 [{acct_name}] DCA-off close: {close_action} {existing_position_qty} {local_tradovate_symbol}")
-                                close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
+                                # ONE CALL: liquidateposition closes position + cancels ALL resting orders (Bug #56)
+                                contract_id = await tradovate.get_contract_id(local_tradovate_symbol)
+                                if contract_id:
+                                    logger.info(f"📤 [{acct_name}] DCA-off liquidate: {existing_position_side} {existing_position_qty} {local_tradovate_symbol} (contract {contract_id})")
+                                    close_result = await tradovate.liquidate_position(int(tradovate_account_id), contract_id)
+                                else:
+                                    logger.warning(f"⚠️ [{acct_name}] Contract ID lookup failed for {local_tradovate_symbol} — falling back to market close")
+                                    close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
+                                    close_order_data = tradovate.create_market_order(
+                                        tradovate_account_spec, local_tradovate_symbol,
+                                        close_action, existing_position_qty, tradovate_account_id
+                                    )
+                                    close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
                                 if close_result and close_result.get('success'):
-                                    logger.info(f"✅ [{acct_name}] DCA-off close filled — proceeding to fresh bracket entry")
+                                    logger.info(f"✅ [{acct_name}] DCA-off close filled + resting orders cancelled — proceeding to fresh bracket entry")
                                 else:
                                     close_err = close_result.get('error') or 'Unknown error' if close_result else 'No response'
                                     logger.warning(f"⚠️ [{acct_name}] DCA-off close may have failed: {close_err} — proceeding to bracket anyway")
+                                # Clean up internal monitors
+                                try:
+                                    from ultra_simple_server import unregister_break_even_monitor
+                                    be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
+                                    unregister_break_even_monitor(be_key)
+                                except Exception:
+                                    pass
 
                                 has_existing_position = False
                             # Continue to execute
@@ -2571,51 +2532,31 @@ def execute_trade_simple(
                                 # Step 1: Cancel resting orders, Step 2: Close position, Step 3: Reset for re-entry
                                 logger.info(f"🔄 [{acct_name}] REVERSAL - Closing {existing_position_side} {existing_position_qty}, then entering {signal_side} {adjusted_quantity}")
 
-                                # STEP 1: Cancel all resting exit orders before closing position
-                                logger.info(f"🔄 [{acct_name}] REVERSAL: Cancelling resting orders on {local_tradovate_symbol}...")
-                                try:
-                                    flip_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
-                                    cancelled_count = 0
-                                    for fo in (flip_orders or []):
-                                        fo_symbol = str(fo.get('symbol', '')).upper()
-                                        fo_status = str(fo.get('ordStatus', '')).upper()
-                                        fo_id = fo.get('id')
-                                        if (local_symbol_root in fo_symbol and
-                                            fo_status in ['WORKING', 'NEW', 'PENDINGNEW'] and fo_id):
-                                            try:
-                                                await tradovate.cancel_order_smart(int(fo_id), use_websocket=False)
-                                                cancelled_count += 1
-                                                try:
-                                                    from ultra_simple_server import unregister_oco_pair
-                                                    unregister_oco_pair(int(fo_id))
-                                                except Exception:
-                                                    pass
-                                            except Exception as cancel_err:
-                                                logger.warning(f"⚠️ [{acct_name}] Could not cancel order {fo_id}: {cancel_err}")
-                                    if cancelled_count > 0:
-                                        logger.info(f"🗑️ [{acct_name}] Cancelled {cancelled_count} resting orders before reversal close")
-                                    try:
-                                        from ultra_simple_server import unregister_break_even_monitor
-                                        be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
-                                        unregister_break_even_monitor(be_key)
-                                    except Exception:
-                                        pass
-                                except Exception as cleanup_err:
-                                    logger.warning(f"⚠️ [{acct_name}] Reversal order cleanup failed: {cleanup_err}")
-
-                                # STEP 2: Close existing position with market order
-                                close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
-                                close_order_data = tradovate.create_market_order(
-                                    tradovate_account_spec, local_tradovate_symbol,
-                                    close_action, existing_position_qty, tradovate_account_id
-                                )
-                                logger.info(f"📤 [{acct_name}] Reversal close: {close_action} {existing_position_qty} {local_tradovate_symbol}")
-                                close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
+                                # ONE CALL: liquidateposition closes position + cancels ALL resting orders (Bug #56)
+                                contract_id = await tradovate.get_contract_id(local_tradovate_symbol)
+                                if contract_id:
+                                    logger.info(f"📤 [{acct_name}] Reversal liquidate: {existing_position_side} {existing_position_qty} {local_tradovate_symbol} (contract {contract_id})")
+                                    close_result = await tradovate.liquidate_position(int(tradovate_account_id), contract_id)
+                                else:
+                                    logger.warning(f"⚠️ [{acct_name}] Contract ID lookup failed for {local_tradovate_symbol} — falling back to market close")
+                                    close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
+                                    close_order_data = tradovate.create_market_order(
+                                        tradovate_account_spec, local_tradovate_symbol,
+                                        close_action, existing_position_qty, tradovate_account_id
+                                    )
+                                    close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
                                 if close_result and close_result.get('success'):
-                                    logger.info(f"✅ [{acct_name}] Reversal close filled — proceeding to {signal_side} entry")
+                                    logger.info(f"✅ [{acct_name}] Reversal close filled + resting orders cancelled — proceeding to {signal_side} entry")
                                 else:
                                     close_err = close_result.get('error') or 'Unknown error' if close_result else 'No response'
                                     logger.warning(f"⚠️ [{acct_name}] Reversal close may have failed: {close_err} — proceeding to entry anyway")
+                                # Clean up internal monitors
+                                try:
+                                    from ultra_simple_server import unregister_break_even_monitor
+                                    be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
+                                    unregister_break_even_monitor(be_key)
+                                except Exception:
+                                    pass
 
                                 # STEP 3: Reset position state so entry logic treats this as fresh
                                 has_existing_position = False
