@@ -13589,7 +13589,11 @@ def api_delete_recorder(recorder_id):
         cursor.execute(f'DELETE FROM recorders WHERE id = {ph}', (recorder_id,))
         conn.commit()
         conn.close()
-        
+
+        # Bug #58: Clear entire recorder cache on delete
+        recorder_cache.clear()
+        recorder_cache_time.clear()
+
         logger.info(f"Deleted recorder: {name} (ID: {recorder_id}) - Cascade deleted {trades_deleted} trades, {signals_deleted} signals, {positions_deleted} positions")
         
         return jsonify({
@@ -16609,9 +16613,19 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             except:
                 pass
         
-        cursor.execute(f'SELECT * FROM recorders WHERE webhook_token = {placeholder}', (webhook_token,))
-        recorder_row = cursor.fetchone()
-        
+        # Bug #58: Check in-memory cache first (0 DB queries on hit)
+        now = time.time()
+        if webhook_token in recorder_cache and (now - recorder_cache_time.get(webhook_token, 0)) < CACHE_TTL:
+            recorder_row = recorder_cache[webhook_token]
+        else:
+            cursor.execute(f'SELECT * FROM recorders WHERE webhook_token = {placeholder}', (webhook_token,))
+            recorder_row = cursor.fetchone()
+            if recorder_row:
+                cached = dict(recorder_row) if not isinstance(recorder_row, dict) else recorder_row
+                recorder_cache[webhook_token] = cached
+                recorder_cache_time[webhook_token] = now
+                recorder_row = cached
+
         if not recorder_row:
             _logger.warning(f"Webhook received for unknown token: {webhook_token[:8]}...")
             # Log to activity for monitoring
