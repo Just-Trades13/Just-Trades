@@ -2625,8 +2625,15 @@ def execute_trade_simple(
 
                         # Fallback: basic sl_type dropdown on trader/recorder
                         if not trailing_stop_bool and not auto_trail and trader.get('sl_type') in ('Trail', 'Trailing'):
-                            trailing_stop_bool = True
-                            logger.info(f"📊 [{acct_name}] Trailing stop enabled via sl_type setting")
+                            if sl_ticks and sl_ticks > 0:
+                                auto_trail = {
+                                    'stopLoss': sl_ticks,           # Trail distance in ticks (converted to points in place_bracket_order)
+                                    'trigger': 1,                   # 1 tick profit = near-immediate trailing
+                                    'freq': local_tick_size         # Update every tick (in points)
+                                }
+                                logger.info(f"📊 [{acct_name}] autoTrail via sl_type: distance={sl_ticks} ticks, trigger=1 tick, freq={local_tick_size} pts")
+                            else:
+                                logger.warning(f"⚠️ [{acct_name}] sl_type=Trail but sl_ticks=0 — no trailing stop placed")
 
                         # Build multi-bracket legs for native multi-TP bracket orders
                         multi_brackets_list = None
