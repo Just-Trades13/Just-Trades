@@ -2623,6 +2623,11 @@ def execute_trade_simple(
                                     trailing_stop_bool = True
                                     logger.info(f"📊 [{acct_name}] Immediate trailing stop: {offset_ticks} ticks")
 
+                        # Fallback: basic sl_type dropdown on trader/recorder
+                        if not trailing_stop_bool and not auto_trail and trader.get('sl_type') in ('Trail', 'Trailing'):
+                            trailing_stop_bool = True
+                            logger.info(f"📊 [{acct_name}] Trailing stop enabled via sl_type setting")
+
                         # Build multi-bracket legs for native multi-TP bracket orders
                         multi_brackets_list = None
                         if has_multi_tp and risk_config:
