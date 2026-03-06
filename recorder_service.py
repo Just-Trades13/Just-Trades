@@ -3144,18 +3144,32 @@ def execute_trade_simple(
                                 logger.error(f"   broker_avg={broker_avg}, sl_ticks={sl_ticks}, tick_size={local_tick_size}")
                                 logger.error(f"   ⚠️ POSITION HAS NO STOP LOSS PROTECTION!")
                             else:
-                                logger.info(f"📊 [{acct_name}] PLACING SL @ {sl_price} ({sl_ticks} ticks from entry {broker_avg})")
-                                sl_order_data = {
-                                    "accountId": tradovate_account_id,
-                                    "accountSpec": tradovate_account_spec,
-                                    "symbol": local_tradovate_symbol,
-                                    "action": sl_action,
-                                    "orderQty": broker_qty,
-                                    "orderType": "Stop",
-                                    "stopPrice": sl_price,
-                                    "timeInForce": "GTC",
-                                    "isAutomated": True
-                                }
+                                use_trail_sl = trader.get('sl_type') in ('Trail', 'Trailing')
+                                if use_trail_sl:
+                                    trail_offset_points = sl_ticks * local_tick_size
+                                    logger.info(f"📊 [{acct_name}] PLACING TRAILING SL: {sl_ticks} ticks ({trail_offset_points} pts), initial @ {sl_price}")
+                                    sl_order_data = tradovate.create_trailing_stop_order(
+                                        account_spec=tradovate_account_spec,
+                                        symbol=local_tradovate_symbol,
+                                        side=sl_action,
+                                        quantity=broker_qty,
+                                        offset=trail_offset_points,
+                                        account_id=tradovate_account_id,
+                                        initial_stop_price=sl_price
+                                    )
+                                else:
+                                    logger.info(f"📊 [{acct_name}] PLACING SL @ {sl_price} ({sl_ticks} ticks from entry {broker_avg})")
+                                    sl_order_data = {
+                                        "accountId": tradovate_account_id,
+                                        "accountSpec": tradovate_account_spec,
+                                        "symbol": local_tradovate_symbol,
+                                        "action": sl_action,
+                                        "orderQty": broker_qty,
+                                        "orderType": "Stop",
+                                        "stopPrice": sl_price,
+                                        "timeInForce": "GTC",
+                                        "isAutomated": True
+                                    }
                                 sl_result = await tradovate.place_order_smart(sl_order_data, use_websocket=False)
                                 if sl_result and sl_result.get('success'):
                                     sl_order_id = sl_result.get('orderId') or sl_result.get('id')
