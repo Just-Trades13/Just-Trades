@@ -6294,7 +6294,7 @@ def register():
     #   1. User buys on Whop → webhook fires → auto_create_user_from_whop()
     #   2. Activation email sent → user clicks link → sets username + password
     flash('To get started, choose a plan and sign up through our checkout. You will receive an activation email to set up your account.', 'info')
-    return redirect(url_for('pricing'))
+    return redirect(url_for('marketing.pricing'))
 
 
 @app.route('/logout')
