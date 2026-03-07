@@ -550,6 +550,11 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | CLOSE + no position = return | Lines ~2469-2476, after Bug #46 handler | CLOSE must never reach entry logic | CLOSE opens SHORT when broker is flat |
 | Action-based CLOSE queues broker | Lines ~17082-17098, `broker_execution_queue.put_nowait()` | DB update alone doesn't close broker position | CLOSE signals update DB but Tradovate position stays open (Bug #53) |
 | Per-call event loop in run_async() | `async_utils.py`, `asyncio.new_event_loop()` per call | Shared loop = cross-signal contention | 3-minute trade delays from shared event loop blocking (Bug #52) |
+| All exits use liquidateposition | `liquidate_position(account_id, contract_id)` on CLOSE, DCA-off, reversal | Single API call closes position + cancels ALL resting orders | Orphaned trailing stops, TPs, SLs left on broker after close (Bug #56) |
+| Webhook handler: no DB position query | `existing_position = None` in process_webhook_directly() | same_direction_ignore + DCA sizing use broker state in do_trade_for_account() | Stale DB query delays webhook by 10-50ms under load (Bug #58) |
+| same_direction_ignore in broker worker | Check at do_trade_for_account() line ~2471, before DCA logic | Uses real broker position, not stale recorded_trades | Stale DB says "in position" when broker is flat → wrong blocking decision |
+| add_position_size in broker worker | DCA override at do_trade_for_account() line ~2471 | Broker worker knows actual position state for DCA vs initial | Webhook handler uses stale DB → wrong qty on DCA adds |
+| Worker threads 10+10 not 100+100 | `_fast_webhook_worker_count=10`, `_broker_execution_worker_count=10` | GIL means extra threads = context switching, not parallelism | 200 threads thrash under 15-webhook burst, delays all signals (Bug #58) |
 
 ---
 
