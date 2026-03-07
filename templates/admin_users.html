@@ -2172,11 +2172,11 @@ function filterUsers() {
         let matchesFilter = true;
         if (activeFilter !== 'all') {
             const badges = row.querySelectorAll('.badge');
-            const badgeTexts = Array.from(badges).map(b => b.textContent.trim().toLowerCase());
-            if (activeFilter === 'online') matchesFilter = badgeTexts.includes('online');
-            else if (activeFilter === 'offline') matchesFilter = badgeTexts.includes('offline');
-            else if (activeFilter === 'pending') matchesFilter = badgeTexts.includes('pending');
-            else if (activeFilter === 'admins') matchesFilter = badgeTexts.includes('admin');
+            const badgeText = Array.from(badges).map(b => b.textContent.trim().toLowerCase()).join(' ');
+            if (activeFilter === 'online') matchesFilter = badgeText.includes('online');
+            else if (activeFilter === 'offline') matchesFilter = badgeText.includes('offline');
+            else if (activeFilter === 'pending') matchesFilter = badgeText.includes('pending');
+            else if (activeFilter === 'admins') matchesFilter = badgeText.includes('admin');
         }
 
         if (matchesSearch && matchesFilter) {
