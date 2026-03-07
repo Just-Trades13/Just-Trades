@@ -18536,7 +18536,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             'sl_price': sl_price,
             'trade_id': recorded_trade_id,
             'pnl': pnl_result,
-            'broker_queued': True,  # Broker execution queued (async)
+            'broker_queued': broker_was_queued,  # Reflects actual queue status
             'tracking': 'signal-based',
             'processing_time_ms': int(processing_time * 1000)
         })
