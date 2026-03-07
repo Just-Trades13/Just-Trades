@@ -9918,6 +9918,44 @@ def _whop_membership_sync():
         except Exception as e:
             print(f"⚠️ Whop sync: cancellation reconciliation error: {e}")
 
+    # Step 7: Reverse reconciliation — verify locally-active subs not seen in Whop response
+    # Catches memberships that Whop doesn't return in the paginated list at all
+    REVERSE_CHECK_LIMIT = 10  # Max individual API verifications per sync cycle
+    try:
+        seen_membership_ids = {m.get('id') for m in memberships if m.get('id')}
+        conn_rev, db_type_rev = get_subscription_db_connection()
+        cursor_rev = conn_rev.cursor()
+        try:
+            cursor_rev.execute(
+                "SELECT whop_membership_id, user_id FROM user_subscriptions "
+                "WHERE status IN ('active', 'trialing') AND whop_membership_id IS NOT NULL"
+            )
+            local_active = cursor_rev.fetchall()
+        finally:
+            cursor_rev.close()
+            conn_rev.close()
+
+        reverse_check_count = 0
+        for row in local_active:
+            row_dict = dict(row)
+            local_mid = row_dict.get('whop_membership_id')
+            if not local_mid or local_mid in seen_membership_ids or local_mid in invalid_membership_ids:
+                continue  # Already processed above
+            if reverse_check_count >= REVERSE_CHECK_LIMIT:
+                break  # Rate limit — remaining will be caught in subsequent cycles
+            from whop_integration import verify_membership
+            verification = verify_membership(local_mid)
+            reverse_check_count += 1
+            if verification is None:
+                try:
+                    cancel_subscription(whop_membership_id=local_mid)
+                    cancelled_count += 1
+                    print(f"🔄 Whop sync: reverse-reconciled cancellation for membership {local_mid} (user {row_dict.get('user_id')})")
+                except Exception as e:
+                    print(f"⚠️ Whop sync: failed to reverse-reconcile {local_mid}: {e}")
+    except Exception as e:
+        print(f"⚠️ Whop sync: reverse reconciliation error: {e}")
+
     # Update stats for admin visibility
     _whop_sync_stats['last_run'] = datetime.now().isoformat()
     _whop_sync_stats['last_synced'] = synced_count
