@@ -28354,6 +28354,278 @@ def api_backtest_delete(import_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/backtest/<int:import_id>/analytics', methods=['GET'])
+def api_backtest_analytics(import_id):
+    """Return analytics for a backtest import — same format as /api/paper-trades/analytics."""
+    try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(f'SELECT * FROM tv_backtest_imports WHERE id = {ph}', (import_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({'success': False, 'error': 'Import not found'}), 404
+
+        imp = dict(row)
+        total = imp.get('total_trades', 0) or 0
+        wins = imp.get('wins', 0) or 0
+        losses = imp.get('losses', 0) or 0
+        avg_win = imp.get('avg_win', 0) or 0
+        avg_loss = imp.get('avg_loss', 0) or 0
+        win_rate = imp.get('win_rate', 0) or 0
+        loss_rate = (losses / total * 100) if total else 0
+        expectancy = ((win_rate / 100) * avg_win) - ((loss_rate / 100) * abs(avg_loss))
+
+        analytics = {
+            'total_trades': total,
+            'winning_trades': wins,
+            'losing_trades': losses,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(imp.get('net_pnl', 0) or 0, 2),
+            'gross_profit': round(imp.get('gross_profit', 0) or 0, 2),
+            'gross_loss': round(imp.get('gross_loss', 0) or 0, 2),
+            'profit_factor': round(imp.get('profit_factor', 0) or 0, 2),
+            'average_win': round(avg_win, 2),
+            'average_loss': round(abs(avg_loss), 2),
+            'largest_win': round(imp.get('largest_win', 0) or 0, 2),
+            'largest_loss': round(imp.get('largest_loss', 0) or 0, 2),
+            'max_drawdown': round(abs(imp.get('max_drawdown', 0) or 0), 2),
+            'average_trade': round(imp.get('avg_trade', 0) or 0, 2),
+            'expectancy': round(expectancy, 2),
+            'avg_hold_time_seconds': 0,
+        }
+
+        return jsonify({'success': True, 'analytics': analytics})
+    except Exception as e:
+        logger.error(f"Backtest analytics error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/<int:import_id>/chart-data', methods=['GET'])
+def api_backtest_chart_data(import_id):
+    """Return cumulative P&L + drawdown for chart — same format as /api/paper-trades/chart-data."""
+    try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(f'''
+            SELECT trade_num, date_time, profit, cumulative_profit, drawdown
+            FROM tv_backtest_trades
+            WHERE import_id = {ph}
+            ORDER BY trade_num ASC
+        ''', (import_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return jsonify({'success': True, 'labels': [], 'profit': [], 'drawdown': []})
+
+        from datetime import datetime as _dt
+
+        daily = {}
+        day_order = []
+
+        for row in rows:
+            r = dict(row)
+            cum_profit = r.get('cumulative_profit', 0) or 0
+            trade_dd = abs(r.get('drawdown', 0) or 0)
+            date_str = ''
+            raw_dt = r.get('date_time', '')
+            if raw_dt:
+                try:
+                    dt = _dt.strptime(str(raw_dt).strip()[:16], '%Y-%m-%d %H:%M')
+                    date_str = dt.strftime('%b %d')
+                except Exception:
+                    date_str = str(raw_dt)[:10]
+            if not date_str:
+                date_str = f'Trade {r.get("trade_num", 0)}'
+
+            if date_str not in daily:
+                daily[date_str] = {'peak_dd': 0.0, 'last_cum': 0.0}
+                day_order.append(date_str)
+
+            daily[date_str]['last_cum'] = cum_profit
+            if trade_dd > daily[date_str]['peak_dd']:
+                daily[date_str]['peak_dd'] = trade_dd
+
+        labels = []
+        profit_vals = []
+        drawdown_vals = []
+
+        for date_str in day_order:
+            d = daily[date_str]
+            labels.append(date_str)
+            profit_vals.append(round(d['last_cum'], 2))
+            drawdown_vals.append(round(d['peak_dd'], 2))
+
+        return jsonify({'success': True, 'labels': labels, 'profit': profit_vals, 'drawdown': drawdown_vals})
+    except Exception as e:
+        logger.error(f"Backtest chart-data error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/<int:import_id>/daily-pnl', methods=['GET'])
+def api_backtest_daily_pnl(import_id):
+    """Return daily P&L for calendar — same format as /api/paper-trades/daily-pnl."""
+    try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(f'''
+            SELECT trade_num, date_time, profit
+            FROM tv_backtest_trades
+            WHERE import_id = {ph}
+            ORDER BY trade_num ASC
+        ''', (import_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        daily = {}
+        for row in rows:
+            r = dict(row)
+            profit = r.get('profit', 0) or 0
+            raw_dt = str(r.get('date_time', '')).strip()
+            date_str = raw_dt[:10] if len(raw_dt) >= 10 else ''
+            if not date_str:
+                continue
+
+            if date_str not in daily:
+                daily[date_str] = {'pnl': 0.0, 'count': 0, 'winners': 0, 'losers': 0}
+            daily[date_str]['pnl'] += profit
+            daily[date_str]['count'] += 1
+            if profit > 0:
+                daily[date_str]['winners'] += 1
+            elif profit < 0:
+                daily[date_str]['losers'] += 1
+
+        result = []
+        for date_str in sorted(daily.keys(), reverse=True):
+            d = daily[date_str]
+            count = d['count']
+            w = d['winners']
+            result.append({
+                'date': date_str,
+                'trade_count': count,
+                'pnl': round(d['pnl'], 2),
+                'winners': w,
+                'losers': d['losers'],
+                'win_rate': round((w / count * 100), 1) if count else 0,
+            })
+
+        return jsonify({'success': True, 'daily_pnl': result})
+    except Exception as e:
+        logger.error(f"Backtest daily-pnl error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/<int:import_id>/history', methods=['GET'])
+def api_backtest_history(import_id):
+    """Return trade history from tv_backtest_trades — compatible with paper-trades history format."""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        result_filter = request.args.get('filter', type=str)
+
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get import info for symbol
+        cursor.execute(f'SELECT name, symbol FROM tv_backtest_imports WHERE id = {ph}', (import_id,))
+        imp_row = cursor.fetchone()
+        if not imp_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Import not found'}), 404
+        imp = dict(imp_row)
+
+        # Build filter
+        conditions = [f'import_id = {ph}']
+        params = [import_id]
+
+        if result_filter == 'win':
+            conditions.append('profit >= 0')
+        elif result_filter == 'loss':
+            conditions.append('profit < 0')
+
+        where = ' AND '.join(conditions)
+
+        # Count
+        cursor.execute(f'SELECT COUNT(*) as cnt FROM tv_backtest_trades WHERE {where}', tuple(params))
+        count_row = cursor.fetchone()
+        total = dict(count_row).get('cnt', 0) if count_row else 0
+
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = max(1, min(page, total_pages))
+        offset = (page - 1) * per_page
+
+        cursor.execute(f'''
+            SELECT * FROM tv_backtest_trades WHERE {where}
+            ORDER BY trade_num DESC
+            LIMIT {ph} OFFSET {ph}
+        ''', tuple(params) + (per_page, offset))
+        rows = cursor.fetchall()
+        conn.close()
+
+        trades = []
+        for row in rows:
+            r = dict(row)
+            profit = r.get('profit', 0) or 0
+            trade_type = str(r.get('type', '')).lower()
+            side = 'LONG' if 'long' in trade_type else ('SHORT' if 'short' in trade_type else 'UNKNOWN')
+
+            if profit > 0:
+                status = 'WIN'
+            elif profit < 0:
+                status = 'LOSS'
+            else:
+                status = 'FLAT'
+
+            trades.append({
+                'id': r.get('id'),
+                'recorder_id': None,
+                'recorder_name': imp.get('name', 'Backtest'),
+                'symbol': imp.get('symbol', ''),
+                'side': side,
+                'quantity': r.get('contracts', 0),
+                'entry_price': r.get('price', 0),
+                'exit_price': None,
+                'pnl': round(profit, 2),
+                'drawdown': r.get('drawdown'),
+                'cumulative_pnl': r.get('cumulative_profit'),
+                'opened_at': r.get('date_time'),
+                'closed_at': r.get('date_time'),
+                'trade_status': 'closed',
+                'result_status': status,
+                'signal': r.get('signal', ''),
+                'run_up': r.get('run_up'),
+            })
+
+        return jsonify({
+            'success': True,
+            'trades': trades,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages,
+                'total': total,
+                'has_prev': page > 1,
+                'has_next': page < total_pages,
+            }
+        })
+    except Exception as e:
+        logger.error(f"Backtest history error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/news-feed', methods=['GET'])
 def api_news_feed():
     """Get financial news from RSS feeds"""
