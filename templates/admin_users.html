@@ -1079,7 +1079,7 @@
                 </td>
                 <td>
                     {% if not user.is_approved and not user.is_admin %}
-                    <span class="badge badge-pending" id="status-badge-{{ user.id }}">
+                    <span class="badge badge-pending" id="status-badge-{{ user.id }}" data-username="{{ user.username }}">
                         <span class="material-icons" style="font-size:14px">hourglass_empty</span>
                         Pending
                     </span>
@@ -1336,7 +1336,8 @@ function loadUserSubscription(userId) {
                 updateTierBadge(badge, data.tier);
                 // Fix "Pending" for cancelled users — they have subscription history
                 var statusBadge = document.getElementById('status-badge-' + userId);
-                if (statusBadge && statusBadge.classList.contains('badge-pending') && data.has_subscription_history) {
+                var isWhopUser = statusBadge && (statusBadge.dataset.username || '').startsWith('whop_');
+                if (statusBadge && statusBadge.classList.contains('badge-pending') && data.has_subscription_history && !isWhopUser) {
                     statusBadge.className = 'badge badge-offline';
                     statusBadge.innerHTML = '<span class="material-icons" style="font-size:14px">cancel</span> No Subscription';
                 }
