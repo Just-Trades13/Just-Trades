@@ -3964,15 +3964,6 @@ try:
 except ImportError as e:
     logger.warning(f"Marketing routes blueprint not available: {e}")
 
-# Paper trading routes blueprint
-try:
-    from paper_routes import paper_bp, init_paper_routes
-    init_paper_routes(socketio=socketio, market_data_cache=_market_data_cache)
-    app.register_blueprint(paper_bp)
-    logger.info("Paper trading routes blueprint registered")
-except ImportError as e:
-    logger.warning(f"Paper trading blueprint not available: {e}")
-
 # Template filter for date formatting
 @app.template_filter('format_datetime')
 def format_datetime_filter(value):
@@ -4068,6 +4059,15 @@ except ImportError:
     except ImportError:
         socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', message_queue=_sio_message_queue)
         logger.info("SocketIO using threading async mode (fallback)")
+
+# Paper trading routes blueprint (must be after SocketIO init)
+try:
+    from paper_routes import paper_bp, init_paper_routes
+    init_paper_routes(socketio=socketio, market_data_cache=_market_data_cache)
+    app.register_blueprint(paper_bp)
+    logger.info("Paper trading routes blueprint registered")
+except (ImportError, NameError) as e:
+    logger.warning(f"Paper trading blueprint not available: {e}")
 
 logging.getLogger('engineio.server').setLevel(logging.WARNING)
 logging.getLogger('socketio.server').setLevel(logging.WARNING)
