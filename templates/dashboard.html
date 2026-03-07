@@ -3698,6 +3698,26 @@
         gap: 6px;
     }
     .bt-card-footer .material-icons { font-size: 13px; opacity: 0.5; }
+    .bt-card-footer { justify-content: space-between; }
+    .bt-trades-toggle {
+        background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+        color: var(--text-muted); border-radius: 4px; padding: 2px 8px; cursor: pointer;
+        font-size: 0.68rem; display: flex; align-items: center; gap: 2px;
+    }
+    .bt-trades-toggle:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .bt-trades-panel { background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.06); }
+    .bt-trades-table-wrap { max-height: 300px; overflow-y: auto; }
+    .bt-trades-table { width: 100%; border-collapse: collapse; font-size: 0.7rem; }
+    .bt-trades-table th {
+        position: sticky; top: 0; background: rgba(30,30,40,0.95);
+        padding: 4px 8px; text-align: left; color: var(--text-muted); font-weight: 500;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .bt-trades-table td { padding: 3px 8px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+    .bt-exit-row { background: rgba(255,255,255,0.02); }
+    .bt-entry-row { opacity: 0.7; }
+    .bt-trades-table .positive { color: #00c896; }
+    .bt-trades-table .negative { color: #ff4757; }
 
     /* ── Backtest Upload Modal ── */
     .bt-modal-overlay {
@@ -5989,7 +6009,13 @@
                         <div class="bt-stat"><p class="bt-stat-label">Max DD</p><p class="bt-stat-value negative">${ddSign}${Math.abs(imp.max_drawdown).toFixed(2)}</p></div>
                         <div class="bt-stat"><p class="bt-stat-label">Long / Short</p><p class="bt-stat-value accent">${imp.long_trades} / ${imp.short_trades}</p></div>
                     </div>
-                    <div class="bt-card-footer"><span class="material-icons">date_range</span>${btEsc(imp.start_date || '')} &mdash; ${btEsc(imp.end_date || '')}</div>
+                    <div class="bt-card-footer">
+                        <span><span class="material-icons">date_range</span>${btEsc(imp.start_date || '')} &mdash; ${btEsc(imp.end_date || '')}</span>
+                        <button class="bt-trades-toggle" onclick="toggleBacktestTrades(event, ${imp.id})">
+                            <span class="material-icons" style="font-size:16px">expand_more</span> Trades
+                        </button>
+                    </div>
+                    <div class="bt-trades-panel" id="btTrades_${imp.id}" style="display:none"></div>
                 `;
                 grid.appendChild(card);
             });
@@ -6093,6 +6119,60 @@
             }
         } catch (err) {
             alert('Delete failed: ' + err.message);
+        }
+    }
+
+    async function toggleBacktestTrades(event, importId) {
+        event.stopPropagation();
+        const panel = document.getElementById('btTrades_' + importId);
+        if (!panel) return;
+
+        // Toggle visibility
+        if (panel.style.display !== 'none') {
+            panel.style.display = 'none';
+            return;
+        }
+
+        // Show loading
+        panel.style.display = 'block';
+        panel.innerHTML = '<p style="padding:8px;color:var(--text-muted,#888)">Loading trades...</p>';
+
+        try {
+            const res = await fetch('/api/backtest/' + importId + '/trades');
+            const data = await res.json();
+            if (!data.success || !data.trades || data.trades.length === 0) {
+                panel.innerHTML = '<p style="padding:8px;color:var(--text-muted,#888)">No individual trades stored.</p>';
+                return;
+            }
+
+            // Group by trade_num (entry + exit per trade)
+            let html = '<div class="bt-trades-table-wrap"><table class="bt-trades-table">';
+            html += '<thead><tr><th>#</th><th>Type</th><th>Signal</th><th>Date/Time</th><th>Price</th><th>Qty</th><th>P&L</th><th>MFE</th><th>MAE</th></tr></thead><tbody>';
+
+            data.trades.forEach(t => {
+                const isExit = (t.type || '').toLowerCase().startsWith('exit');
+                const pnl = t.profit || 0;
+                const pnlClass = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
+                const pnlStr = pnl !== 0 ? (pnl > 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2) : '—';
+                const mfe = t.run_up || 0;
+                const mae = t.drawdown || 0;
+                html += '<tr class="' + (isExit ? 'bt-exit-row' : 'bt-entry-row') + '">';
+                html += '<td>' + (t.trade_num || '') + '</td>';
+                html += '<td>' + btEsc(t.type || '') + '</td>';
+                html += '<td>' + btEsc(t.signal || '') + '</td>';
+                html += '<td>' + btEsc(t.date_time || '') + '</td>';
+                html += '<td>$' + (t.price || 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>';
+                html += '<td>' + (t.contracts || '') + '</td>';
+                html += '<td class="' + pnlClass + '">' + (isExit ? pnlStr : '') + '</td>';
+                html += '<td style="color:#00c896">' + (isExit && mfe ? '+$' + Math.abs(mfe).toFixed(2) : '') + '</td>';
+                html += '<td style="color:#ff4757">' + (isExit && mae ? '-$' + Math.abs(mae).toFixed(2) : '') + '</td>';
+                html += '</tr>';
+            });
+
+            html += '</tbody></table></div>';
+            panel.innerHTML = html;
+        } catch (err) {
+            panel.innerHTML = '<p style="padding:8px;color:#ff4757">Failed to load trades: ' + btEsc(err.message) + '</p>';
         }
     }
 
