@@ -850,6 +850,7 @@ curl -s "https://justtrades.app/api/accounts/auth-status"
 22. **"I only need to update the DB record for CLOSE signals"** → NO. Bug #53. The action-based CLOSE handler only updated `recorded_trades` and `recorder_positions` — never queued broker execution. Position stayed open at Tradovate. **Went WEEKS undetected.** ALL CLOSE handlers MUST queue `broker_execution_queue.put_nowait()`.
 23. **"All broker workers can share one event loop"** → NO. Bug #52. `asyncio.run_coroutine_threadsafe()` on a shared loop means ANY blocking coroutine stalls ALL other workers. 3-minute trade delays. Fix: per-call `asyncio.new_event_loop()` in `run_async()`.
 24. **"I'll send the raw BUY/SELL action for close broker tasks"** → NO. Bug #55. FLAT handler sent `action: 'SELL'` (from TradingView) to broker task for closing LONG. `do_trade_for_account()` didn't recognize SELL as a close signal — with DCA ON, it was blocked as "opposite direction." ALL broker tasks that close positions MUST use `action: 'CLOSE'`, never raw BUY/SELL.
+25. **"I'll use get_orders+cancel loop+market close to exit a position"** → NO. Bug #56. Sequential cancel+close can partially fail, leaving orphaned resting orders (trailing stops, TPs, SLs). ALL exit paths MUST use `tradovate.liquidate_position(account_id, contract_id)` — single atomic API call that closes position AND cancels ALL resting orders. Fallback to manual market close only if contract ID lookup fails.
 
 ---
 
