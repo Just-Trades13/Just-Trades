@@ -394,21 +394,25 @@ class PaperPipeline:
         def patched_close(account, symbol, exit_price, comment=""):
             original_close(account, symbol, exit_price, comment)
             if self.engine._history:
-                trade = self.engine._history[-1]
-                try:
-                    self.db.upsert_trade(trade, account)
-                except Exception as e:
-                    logger.error(f"[PaperPipeline] DB persist failed: {e}")
+                trade = dict(self.engine._history[-1])  # copy for thread safety
+                def _persist():
+                    try:
+                        self.db.upsert_trade(trade, account)
+                    except Exception as e:
+                        logger.error(f"[PaperPipeline] DB persist failed: {e}")
+                threading.Thread(target=_persist, daemon=True).start()
             self._broadcast(account)
 
         def patched_partial(account, symbol, close_qty, exit_price, comment=""):
             original_partial(account, symbol, close_qty, exit_price, comment)
             if self.engine._history:
-                trade = self.engine._history[-1]
-                try:
-                    self.db.upsert_trade(trade, account)
-                except Exception as e:
-                    logger.error(f"[PaperPipeline] DB persist failed: {e}")
+                trade = dict(self.engine._history[-1])
+                def _persist():
+                    try:
+                        self.db.upsert_trade(trade, account)
+                    except Exception as e:
+                        logger.error(f"[PaperPipeline] DB persist failed: {e}")
+                threading.Thread(target=_persist, daemon=True).start()
             self._broadcast(account)
 
         self.engine._close_position_locked = patched_close
@@ -421,16 +425,18 @@ class PaperPipeline:
         account = str(payload.get("account", "default"))
         result = self.engine.on_signal(payload)
 
-        # Persist open position to DB (so we have a record before close)
+        # Persist open position to DB in background (so we have a record before close)
         symbol = str(payload.get("ticker", payload.get("symbol", ""))).upper()
         pos = self.engine._get_position(account, symbol)
         if pos is not None and pos.get("status") == "open":
             trade_record = {k: v for k, v in pos.items() if not k.startswith('_')}
             trade_record['unrealized_pnl'] = pos.get('unrealized_pnl', 0)
-            try:
-                self.db.upsert_trade(trade_record, account)
-            except Exception as e:
-                logger.error(f"[PaperPipeline] open position persist failed: {e}")
+            def _persist_open():
+                try:
+                    self.db.upsert_trade(trade_record, account)
+                except Exception as e:
+                    logger.error(f"[PaperPipeline] open position persist failed: {e}")
+            threading.Thread(target=_persist_open, daemon=True).start()
 
         self._broadcast(account)
         return {**result, "account": account, "symbol": symbol}
