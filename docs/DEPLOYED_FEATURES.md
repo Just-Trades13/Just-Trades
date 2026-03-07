@@ -78,6 +78,16 @@
 | Frontend: allow position sizes of 0 in trader form | `c5d72b4` | Feb 24 | Working |
 | ALL `_smart()` calls forced REST-only (`use_websocket=False` on 17 calls) | `c9e49d5`+`a214126` | Feb 24 | **CRITICAL — eliminates 60s trade timeouts on ALL code paths** |
 | WS crash loop fix: `max_size=10MB` + `splitResponses=true` on shared connection manager | `c3b4c5b` | Feb 24 | **Confirmed — ZERO crash loops post-deploy, all 19 listeners connected** |
+| Instant execution: per-call event loop (eliminates 3-min delays) | `a1ed722` | Mar 3 | **Confirmed working — 5/5 executed, ~300ms** |
+| CLOSE signal broker execution fix (Bug #53 dual handler gap) | `6699242` | Mar 4 | **Confirmed working** |
+| liquidateposition for all exits (atomic close + cancel resting orders) | `6b7e2e8` | Mar 5 | **Confirmed working** |
+| Trailing stop fix: autoTrail for brackets, TrailingStop for REST | `b0a8bb6`+`61ca5bc` | Mar 5 | **Confirmed working** |
+| FLAT handler sends CLOSE not raw BUY/SELL (Bug #55) | `dc4a598` | Mar 4 | **Confirmed working** |
+| Webhook perf: thin handler + cache + 10+10 worker threads (Bug #58) | `c13d121`..`fcb7983` | Mar 7 | **Confirmed working** |
+| Activation email spam fix: DB-persisted 24h cooldown | `3b02316` | Mar 7 | **Confirmed working** |
+| Admin-granted subscription protection from Whop sync | `24e899d` | Mar 7 | **Confirmed working** |
+| Paper routes init moved after SocketIO definition (startup crash fix) | `c9cf077` | Mar 7 | **Confirmed working** |
+| Admin users: copy_trader tier badge + pending vs cancelled status fix | `513e930`..`6f5613c` | Mar 7 | Working |
 
 ---
 
