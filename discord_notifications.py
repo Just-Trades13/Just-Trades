@@ -589,3 +589,63 @@ def broadcast_announcement(title: str, message: str, announcement_type: str = 'i
     broadcast_thread.start()
     logger.info(f"📢 Broadcast dispatched to background thread for {user_count} users")
     return user_count
+
+
+def notify_protection_failure(recorder_id: int, symbol: str, acct_name: str,
+                              tp_failed: bool = False, sl_failed: bool = False,
+                              broker_side: str = None, broker_qty: int = None,
+                              broker_avg: float = None):
+    """
+    Send UNPROTECTED POSITION alert when TP or SL placement fails after entry.
+    Uses fire-and-forget daemon thread pattern — NEVER blocks broker pipeline.
+    """
+    if not _notifications_enabled:
+        return
+
+    missing = []
+    if tp_failed:
+        missing.append("TAKE PROFIT")
+    if sl_failed:
+        missing.append("STOP LOSS")
+    if not missing:
+        return
+
+    missing_str = " + ".join(missing)
+
+    embed = {
+        "title": f"UNPROTECTED POSITION — {symbol}",
+        "description": f"Entry filled but **{missing_str}** failed to place after 10 attempts.",
+        "color": 0xFF0000,  # Red
+        "fields": [
+            {"name": "Account", "value": acct_name or "Unknown", "inline": True},
+            {"name": "Side", "value": broker_side or "Unknown", "inline": True},
+            {"name": "Qty", "value": str(broker_qty or "?"), "inline": True},
+            {"name": "Entry", "value": f"{broker_avg:,.2f}" if broker_avg else "Unknown", "inline": True},
+            {"name": "Missing", "value": missing_str, "inline": True},
+            {"name": "Action Required", "value": "Place protection orders manually NOW", "inline": False},
+        ],
+        "thumbnail": {"url": "https://www.justtrades.app/static/img/just_trades_logo.png"},
+        "footer": {"text": "Just.Trades — Protection Failure Alert"},
+        "timestamp": _get_chicago_time().isoformat()
+    }
+
+    user_ids_to_notify = get_users_for_recorder_notifications(recorder_id) if recorder_id else []
+
+    def send_alert_background():
+        try:
+            for uid in user_ids_to_notify:
+                try:
+                    users = get_discord_enabled_users(uid)
+                    for user in users:
+                        try:
+                            send_discord_dm(user['discord_user_id'], "", embed)
+                        except Exception as dm_err:
+                            logger.debug(f"Protection alert DM error: {dm_err}")
+                except Exception as user_err:
+                    logger.debug(f"Protection alert user lookup error: {user_err}")
+        except Exception as e:
+            logger.error(f"Protection failure notification error: {e}")
+
+    alert_thread = threading.Thread(target=send_alert_background, daemon=True)
+    alert_thread.start()
+    logger.warning(f"🚨 PROTECTION FAILURE ALERT dispatched: {symbol} {acct_name} missing {missing_str}")
