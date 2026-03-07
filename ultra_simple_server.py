@@ -16706,8 +16706,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         if raw_body:
             try:
                 data = json.loads(raw_body)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as json_err:
+                _logger.warning(f"⚠️ JSON parse failed: {json_err} | body preview: {raw_body[:200] if raw_body else '(empty)'}")
         # Fallback to Flask request methods only if raw_body parsing failed and we have Flask context
         if not data and raw_body_override is None:
             try:
