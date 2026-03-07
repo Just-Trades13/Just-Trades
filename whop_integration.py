@@ -304,12 +304,25 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
                     if last4:
                         card_fingerprint = f"{brand}_{last4}"
 
+                # Fetch Whop profile for similarity detection
+                whop_username = None
+                whop_display_name = None
+                try:
+                    whop_profile = get_user_by_whop_id(whop_user_id)
+                    if whop_profile:
+                        whop_username = whop_profile.get('username')
+                        whop_display_name = whop_profile.get('name')
+                except Exception as e:
+                    logger.debug(f"Could not fetch Whop profile for trial similarity check: {e}")
+
                 # Record trial fingerprints
                 abuse_detected, abuse_msg = record_trial_start(
                     whop_membership_id=membership_id,
                     whop_user_id=whop_user_id,
                     email=user_email,
                     card_fingerprint=card_fingerprint,
+                    username=whop_username,
+                    display_name=whop_display_name,
                     metadata={
                         'plan': plan_slug,
                         'product_id': product_id,
