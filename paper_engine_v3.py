@@ -88,7 +88,7 @@ class PaperTradingEngine:
     """
 
     def __init__(self, socketio=None, broadcast_namespace="/paper"):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         # account -> symbol -> position dict
         self._positions = {}
         # list of closed trades (most recent last)
