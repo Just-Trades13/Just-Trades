@@ -4063,7 +4063,7 @@ except ImportError:
 # Paper trading routes blueprint (must be after SocketIO init)
 try:
     from paper_routes import paper_bp, init_paper_routes
-    init_paper_routes(socketio=socketio, market_data_cache=_market_data_cache)
+    init_paper_routes(socketio=socketio)
     app.register_blueprint(paper_bp)
     logger.info("Paper trading routes blueprint registered")
 except (ImportError, NameError) as e:
