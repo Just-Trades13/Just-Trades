@@ -476,11 +476,15 @@ class PaperPipeline:
     # ── Broadcast ───────────────────────────────────────────────────────────
 
     def _broadcast(self, account="default"):
-        """Emit full state to connected dashboard clients."""
+        """Emit full state to connected dashboard clients (non-blocking daemon thread)."""
         if self.socketio is None:
             return
         try:
             state = self.get_state(account)
-            self.socketio.emit("paper_state", state, namespace=self.namespace)
+            sio = self.socketio
+            ns = self.namespace
+            t = threading.Thread(target=lambda: sio.emit("paper_state", state, namespace=ns),
+                                 daemon=True)
+            t.start()
         except Exception as e:
             logger.error(f"[PaperPipeline] Broadcast error: {e}")
