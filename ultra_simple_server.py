@@ -16058,7 +16058,26 @@ def broker_execution_worker(worker_id=0):
                             logger.info(f"🔔 Discord notifications disabled (no DISCORD_BOT_TOKEN)")
                     except Exception as notif_err:
                         logger.warning(f"⚠️ Discord notification failed: {notif_err}")
-                    
+
+                    # Protection failure alert — fire-and-forget, never blocks pipeline
+                    try:
+                        acct_results = result.get('all_account_results') or []
+                        for acct_r in acct_results:
+                            if acct_r.get('tp_failed') or acct_r.get('sl_failed'):
+                                from discord_notifications import notify_protection_failure
+                                notify_protection_failure(
+                                    recorder_id=recorder_id,
+                                    symbol=ticker,
+                                    acct_name=acct_r.get('acct_name', 'Unknown'),
+                                    tp_failed=acct_r.get('tp_failed', False),
+                                    sl_failed=acct_r.get('sl_failed', False),
+                                    broker_side=acct_r.get('broker_side'),
+                                    broker_qty=acct_r.get('broker_qty'),
+                                    broker_avg=acct_r.get('broker_avg'),
+                                )
+                    except Exception as pf_err:
+                        logger.warning(f"⚠️ Protection failure alert error: {pf_err}")
+
                     # Register break-even monitor if enabled
                     if break_even_enabled and break_even_ticks > 0 and entry_price > 0:
                         try:
