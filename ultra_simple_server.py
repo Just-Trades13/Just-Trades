@@ -9973,7 +9973,7 @@ def _whop_membership_sync():
 
             for row in stale_rows:
                 stale_id = dict(row).get('whop_membership_id')
-                if stale_id:
+                if stale_id and not stale_id.startswith('admin_granted_') and not stale_id.startswith('mem_test_'):
                     try:
                         cancel_subscription(whop_membership_id=stale_id)
                         cancelled_count += 1
@@ -10006,6 +10006,9 @@ def _whop_membership_sync():
             local_mid = row_dict.get('whop_membership_id')
             if not local_mid or local_mid in seen_membership_ids or local_mid in invalid_membership_ids:
                 continue  # Already processed above
+            # Skip admin-granted subs — manually assigned, not from Whop
+            if local_mid.startswith('admin_granted_') or local_mid.startswith('mem_test_'):
+                continue
             if reverse_check_count >= REVERSE_CHECK_LIMIT:
                 break  # Rate limit — remaining will be caught in subsequent cycles
             from whop_integration import verify_membership
