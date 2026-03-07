@@ -118,11 +118,13 @@ class PaperTradeDB:
                     CREATE INDEX IF NOT EXISTS idx_ptv3_account_status
                     ON paper_trades_v3(account, status)
                 """)
-                # Migration: add user_id column if missing
-                try:
+                # Migration: add user_id column if missing (PG-safe: check first, no failed transaction)
+                cur.execute("""
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'paper_trades_v3' AND column_name = 'user_id'
+                """)
+                if not cur.fetchone():
                     cur.execute("ALTER TABLE paper_trades_v3 ADD COLUMN user_id INTEGER")
-                except Exception:
-                    pass  # column already exists
                 cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_ptv3_user_status
                     ON paper_trades_v3(user_id, status)
