@@ -9748,13 +9748,29 @@ def _whop_membership_sync():
         has_user_had_any_trial, get_subscription_db_connection
     )
 
-    result = whop_api_request('GET', '/memberships?per=100')
-    if not result:
-        print("⚠️ Whop sync: API call returned None — check WHOP_API_KEY")
-        return
+    all_memberships = []
+    page = 1
+    while True:
+        result = whop_api_request('GET', f'/memberships?per=100&page={page}')
+        if not result:
+            if page == 1:
+                print("⚠️ Whop sync: API call returned None — check WHOP_API_KEY")
+                return
+            break  # Later pages failing is non-fatal — process what we have
+        page_data = result.get('data', [])
+        if not page_data:
+            break
+        all_memberships.extend(page_data)
+        pagination = result.get('pagination', {})
+        if not pagination.get('next_page'):
+            break
+        page += 1
+        if page > 20:  # Safety cap — prevent infinite loop
+            print(f"⚠️ Whop sync: hit page cap at {page}")
+            break
 
-    memberships = result.get('data', [])
-    print(f"🔄 Whop sync: got {len(memberships)} memberships from Whop")
+    memberships = all_memberships
+    print(f"🔄 Whop sync: got {len(memberships)} memberships from Whop ({page} page{'s' if page > 1 else ''})")
     synced_count = 0
     resent_count = 0
     cancelled_count = 0
