@@ -16965,8 +16965,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 }
                 broker_execution_queue.put_nowait(broker_task)
                 _logger.info(f"📤 Broker close queued: {close_action} {close_qty} {ticker}")
-            except:
-                _logger.warning(f"⚠️ Broker execution queue full - signal still tracked")
+            except Exception as q_err:
+                _logger.warning(f"⚠️ Broker execution queue full - signal still tracked: {q_err}")
             
             # Track successful webhook processing
             _webhook_last_processed = time.time()
