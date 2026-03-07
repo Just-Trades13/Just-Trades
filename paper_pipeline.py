@@ -118,6 +118,15 @@ class PaperTradeDB:
                     CREATE INDEX IF NOT EXISTS idx_ptv3_account_status
                     ON paper_trades_v3(account, status)
                 """)
+                # Migration: add user_id column if missing
+                try:
+                    cur.execute("ALTER TABLE paper_trades_v3 ADD COLUMN user_id INTEGER")
+                except Exception:
+                    pass  # column already exists
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_ptv3_user_status
+                    ON paper_trades_v3(user_id, status)
+                """)
             else:
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS paper_trades_v3 (
@@ -164,12 +173,21 @@ class PaperTradeDB:
                     CREATE INDEX IF NOT EXISTS idx_ptv3_account_status
                     ON paper_trades_v3(account, status)
                 """)
+                # Migration: add user_id column if missing
+                try:
+                    cur.execute("ALTER TABLE paper_trades_v3 ADD COLUMN user_id INTEGER")
+                except Exception:
+                    pass  # column already exists
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_ptv3_user_status
+                    ON paper_trades_v3(user_id, status)
+                """)
 
     def _ph(self):
         """Placeholder: %s for PostgreSQL, ? for SQLite."""
         return '%s' if self._use_pg else '?'
 
-    def upsert_trade(self, trade, account="default"):
+    def upsert_trade(self, trade, account="default", user_id=None):
         """Insert or update a paper trade record."""
         ph = self._ph()
         legs_json = json.dumps(trade.get('legs', []))
@@ -185,7 +203,7 @@ class PaperTradeDB:
                     mae_dollars, mfe_dollars, mae_price, mfe_price,
                     capture_ratio, efficiency, tick_count, highest_seen, lowest_seen,
                     hold_time_seconds, tp, sl, trail_points,
-                    entry_time, exit_time, legs, status, source
+                    entry_time, exit_time, legs, status, source, user_id
                 ) VALUES (
                     {ph},{ph},{ph},{ph},{ph},{ph},{ph},
                     {ph},{ph},{ph},
@@ -194,7 +212,7 @@ class PaperTradeDB:
                     {ph},{ph},{ph},{ph},
                     {ph},{ph},{ph},{ph},{ph},
                     {ph},{ph},{ph},{ph},
-                    {ph},{ph},{ph},{ph},{ph}
+                    {ph},{ph},{ph},{ph},{ph},{ph}
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     exit_price=EXCLUDED.exit_price,
@@ -213,7 +231,8 @@ class PaperTradeDB:
                     exit_time=EXCLUDED.exit_time,
                     exit_comment=EXCLUDED.exit_comment,
                     legs=EXCLUDED.legs, status=EXCLUDED.status,
-                    qty=EXCLUDED.qty, avg_entry=EXCLUDED.avg_entry
+                    qty=EXCLUDED.qty, avg_entry=EXCLUDED.avg_entry,
+                    user_id=EXCLUDED.user_id
             """
         else:
             sql = """
@@ -225,7 +244,7 @@ class PaperTradeDB:
                     mae_dollars, mfe_dollars, mae_price, mfe_price,
                     capture_ratio, efficiency, tick_count, highest_seen, lowest_seen,
                     hold_time_seconds, tp, sl, trail_points,
-                    entry_time, exit_time, legs, status, source
+                    entry_time, exit_time, legs, status, source, user_id
                 ) VALUES (
                     ?,?,?,?,?,?,?,
                     ?,?,?,
@@ -234,7 +253,7 @@ class PaperTradeDB:
                     ?,?,?,?,
                     ?,?,?,?,?,
                     ?,?,?,?,
-                    ?,?,?,?,?
+                    ?,?,?,?,?,?
                 )
             """
 
@@ -275,22 +294,29 @@ class PaperTradeDB:
             legs_json,
             trade.get('status', 'open'),
             trade.get('source', 'webhook'),
+            user_id,
         )
 
         with self._lock, self._conn() as conn:
             conn.cursor().execute(sql, params)
 
-    def load_history(self, account="default", limit=200):
-        """Load closed trades from DB."""
+    def load_history(self, account="default", limit=200, user_id=None):
+        """Load closed trades from DB. Filter by user_id if provided."""
         ph = self._ph()
+        if user_id is not None:
+            where = f"user_id = {ph} AND status = 'closed'"
+            params = (user_id, limit)
+        else:
+            where = f"account = {ph} AND status = 'closed'"
+            params = (account, limit)
         with self._lock, self._conn() as conn:
             cur = conn.cursor()
             cur.execute(f"""
                 SELECT * FROM paper_trades_v3
-                WHERE account = {ph} AND status = 'closed'
+                WHERE {where}
                 ORDER BY exit_time DESC
                 LIMIT {ph}
-            """, (account, limit))
+            """, params)
             rows = cur.fetchall()
 
         result = []
@@ -306,15 +332,21 @@ class PaperTradeDB:
             result.append(t)
         return list(reversed(result))
 
-    def load_open_positions(self, account="default"):
+    def load_open_positions(self, account="default", user_id=None):
         """Reload open positions on restart (crash recovery)."""
         ph = self._ph()
+        if user_id is not None:
+            where = f"user_id = {ph} AND status = 'open'"
+            params = (user_id,)
+        else:
+            where = f"account = {ph} AND status = 'open'"
+            params = (account,)
         with self._lock, self._conn() as conn:
             cur = conn.cursor()
             cur.execute(f"""
                 SELECT * FROM paper_trades_v3
-                WHERE account = {ph} AND status = 'open'
-            """, (account,))
+                WHERE {where}
+            """, params)
             rows = cur.fetchall()
 
         result = []
@@ -391,13 +423,23 @@ class PaperPipeline:
         original_close = self.engine._close_position_locked
         original_partial = self.engine._partial_close_locked
 
+        def _extract_user_id(account):
+            """Extract user_id from account key like 'user_123'."""
+            if account.startswith("user_"):
+                try:
+                    return int(account.split("_", 1)[1])
+                except (ValueError, IndexError):
+                    pass
+            return None
+
         def patched_close(account, symbol, exit_price, comment=""):
             original_close(account, symbol, exit_price, comment)
             if self.engine._history:
                 trade = dict(self.engine._history[-1])  # copy for thread safety
+                uid = _extract_user_id(account)
                 def _persist():
                     try:
-                        self.db.upsert_trade(trade, account)
+                        self.db.upsert_trade(trade, account, user_id=uid)
                     except Exception as e:
                         logger.error(f"[PaperPipeline] DB persist failed: {e}")
                 threading.Thread(target=_persist, daemon=True).start()
@@ -407,9 +449,10 @@ class PaperPipeline:
             original_partial(account, symbol, close_qty, exit_price, comment)
             if self.engine._history:
                 trade = dict(self.engine._history[-1])
+                uid = _extract_user_id(account)
                 def _persist():
                     try:
-                        self.db.upsert_trade(trade, account)
+                        self.db.upsert_trade(trade, account, user_id=uid)
                     except Exception as e:
                         logger.error(f"[PaperPipeline] DB persist failed: {e}")
                 threading.Thread(target=_persist, daemon=True).start()
@@ -420,9 +463,13 @@ class PaperPipeline:
 
     # ── Webhook entry point ─────────────────────────────────────────────────
 
-    def on_webhook(self, payload):
+    def on_webhook(self, payload, user_id=None):
         """Process a TradingView webhook for paper trading."""
         account = str(payload.get("account", "default"))
+        # Use user-scoped account key when user_id is known
+        if user_id is not None:
+            account = f"user_{user_id}"
+            payload = dict(payload, account=account)
         result = self.engine.on_signal(payload)
 
         # Persist open position to DB in background (so we have a record before close)
@@ -431,9 +478,10 @@ class PaperPipeline:
         if pos is not None and pos.get("status") == "open":
             trade_record = {k: v for k, v in pos.items() if not k.startswith('_')}
             trade_record['unrealized_pnl'] = pos.get('unrealized_pnl', 0)
+            uid = user_id  # capture for closure
             def _persist_open():
                 try:
-                    self.db.upsert_trade(trade_record, account)
+                    self.db.upsert_trade(trade_record, account, user_id=uid)
                 except Exception as e:
                     logger.error(f"[PaperPipeline] open position persist failed: {e}")
             threading.Thread(target=_persist_open, daemon=True).start()

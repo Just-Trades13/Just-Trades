@@ -10,10 +10,41 @@ Zero contact with broker_execution_queue, do_trade_for_account, process_webhook_
 
 import json
 import logging
-from flask import Blueprint, request, jsonify, render_template
+from flask import Blueprint, request, jsonify, render_template, session
 from flask_socketio import emit
 
 logger = logging.getLogger(__name__)
+
+
+def _get_user_id():
+    """Get current user_id from session, or None if not logged in."""
+    return session.get('user_id')
+
+
+def _user_account(user_id):
+    """Build the engine account key for a user_id."""
+    if user_id is not None:
+        return f"user_{user_id}"
+    return "default"
+
+
+def _lookup_user_by_token(webhook_token):
+    """Look up user_id from a recorder webhook_token. Returns (user_id, recorder_id) or (None, None)."""
+    try:
+        from ultra_simple_server import get_db_connection, is_using_postgres
+        conn = get_db_connection()
+        cur = conn.cursor()
+        ph = '%s' if is_using_postgres() else '?'
+        cur.execute(f'SELECT id, user_id FROM recorders WHERE webhook_token = {ph}', (webhook_token,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            if isinstance(row, dict):
+                return row.get('user_id'), row.get('id')
+            return row[1], row[0]
+    except Exception as e:
+        logger.warning(f"[PaperRoutes] Token lookup failed: {e}")
+    return None, None
 
 paper_bp = Blueprint('paper', __name__)
 
@@ -47,25 +78,31 @@ def _register_socketio_events(socketio):
     @socketio.on('connect', namespace='/paper')
     def paper_connect():
         if _pipeline:
-            state = _pipeline.get_state()
+            uid = _get_user_id()
+            account = _user_account(uid)
+            state = _pipeline.get_state(account)
             emit('paper_state', state)
 
     @socketio.on('get_state', namespace='/paper')
     def paper_get_state(data=None):
         if _pipeline:
-            account = (data or {}).get('account', 'default')
+            uid = _get_user_id()
+            account = _user_account(uid)
             emit('paper_state', _pipeline.get_state(account))
 
     @socketio.on('get_analysis', namespace='/paper')
     def paper_get_analysis(data=None):
         if _pipeline:
-            account = (data or {}).get('account', 'default')
-            emit('paper_analysis', _pipeline.get_analysis(account))
+            uid = _get_user_id()
+            account = _user_account(uid)
+            strategy_id = (data or {}).get('strategy_id')
+            emit('paper_analysis', _pipeline.get_analysis(account, strategy_id=strategy_id))
 
     @socketio.on('flatten_all', namespace='/paper')
     def paper_flatten(data=None):
         if _pipeline:
-            account = (data or {}).get('account', 'default')
+            uid = _get_user_id()
+            account = _user_account(uid)
             _pipeline.flatten_all(account, reason="MANUAL_FLATTEN")
             emit('paper_state', _pipeline.get_state(account))
 
@@ -74,7 +111,7 @@ def _register_socketio_events(socketio):
 
 @paper_bp.route('/paper/signal', methods=['POST'])
 def paper_signal():
-    """Webhook entry point for paper trade signals (CSRF exempt)."""
+    """Webhook entry point for paper trade signals (no token — uses payload account or session)."""
     if not _pipeline:
         return jsonify({"error": "paper trading not initialized"}), 503
 
@@ -86,35 +123,64 @@ def paper_signal():
     if not payload:
         return jsonify({"error": "no data received"}), 400
 
-    result = _pipeline.on_webhook(payload)
+    # Use session user_id if logged in, otherwise anonymous
+    uid = _get_user_id()
+    result = _pipeline.on_webhook(payload, user_id=uid)
+    return jsonify(result), 200
+
+
+@paper_bp.route('/paper/signal/<webhook_token>', methods=['POST'])
+def paper_signal_token(webhook_token):
+    """Token-based webhook — same token as live /webhook/<token>, identifies user automatically."""
+    if not _pipeline:
+        return jsonify({"error": "paper trading not initialized"}), 503
+
+    try:
+        payload = request.get_json(force=True)
+    except Exception:
+        payload = None
+
+    if not payload:
+        return jsonify({"error": "no data received"}), 400
+
+    user_id, recorder_id = _lookup_user_by_token(webhook_token)
+    if user_id is None:
+        return jsonify({"error": "invalid webhook token"}), 404
+
+    # Enrich payload with recorder context
+    payload['recorder_id'] = recorder_id
+    result = _pipeline.on_webhook(payload, user_id=user_id)
     return jsonify(result), 200
 
 
 @paper_bp.route('/paper/state', methods=['GET'])
 def paper_state():
-    """Get current paper trading state."""
+    """Get current paper trading state (session-authenticated, per-user)."""
     if not _pipeline:
         return jsonify({"error": "not initialized"}), 503
-    account = request.args.get('account', 'default')
+    uid = _get_user_id()
+    account = _user_account(uid)
     return jsonify(_pipeline.get_state(account))
 
 
 @paper_bp.route('/paper/analysis', methods=['GET'])
 def paper_analysis():
-    """Get MAE/MFE analytics, optionally filtered by strategy_id."""
+    """Get MAE/MFE analytics (session-authenticated, per-user)."""
     if not _pipeline:
         return jsonify({"error": "not initialized"}), 503
-    account = request.args.get('account', 'default')
+    uid = _get_user_id()
+    account = _user_account(uid)
     strategy_id = request.args.get('strategy_id', '').strip() or None
     return jsonify(_pipeline.get_analysis(account, strategy_id=strategy_id))
 
 
 @paper_bp.route('/paper/strategies', methods=['GET'])
 def paper_strategies():
-    """List distinct strategy_ids from trade history."""
+    """List distinct strategy_ids (session-authenticated, per-user)."""
     if not _pipeline:
         return jsonify({"error": "not initialized"}), 503
-    account = request.args.get('account', 'default')
+    uid = _get_user_id()
+    account = _user_account(uid)
     state = _pipeline.get_state(account)
     seen = set()
     for t in state.get('history', []):
@@ -128,32 +194,38 @@ def paper_strategies():
     return jsonify({"strategies": sorted(seen)})
 
 
-
 @paper_bp.route('/paper/history', methods=['GET'])
 def paper_history():
-    """Get closed trade history from DB (paginated)."""
+    """Get closed trade history from DB (session-authenticated, per-user)."""
     if not _pipeline:
         return jsonify({"error": "not initialized"}), 503
-    account = request.args.get('account', 'default')
+    uid = _get_user_id()
+    account = _user_account(uid)
     limit = int(request.args.get('limit', 500))
-    history = _pipeline.db.load_history(account, limit)
+    history = _pipeline.db.load_history(account, limit, user_id=uid)
     return jsonify({"history": history, "count": len(history)})
 
 
 @paper_bp.route('/paper/flatten', methods=['POST'])
 def paper_flatten():
-    """Emergency flatten all paper positions."""
+    """Emergency flatten all paper positions (session-authenticated, per-user)."""
     if not _pipeline:
         return jsonify({"error": "not initialized"}), 503
-    data = request.get_json(force=True) or {}
-    account = data.get('account', 'default')
-    _pipeline.flatten_all(account, reason=data.get('reason', 'HTTP_FLATTEN'))
+    uid = _get_user_id()
+    account = _user_account(uid)
+    _pipeline.flatten_all(account, reason="HTTP_FLATTEN")
     return jsonify({"status": "ok"})
 
 
 @paper_bp.route('/paper-trading')
 def paper_trading_page():
-    """Serve paper trading dashboard."""
+    """Serve paper trading dashboard (requires login)."""
+    uid = _get_user_id()
+    if uid is None:
+        from flask import redirect, url_for, flash
+        session['next_url'] = request.url
+        flash('Please log in to access paper trading.', 'warning')
+        return redirect(url_for('login'))
     return render_template('paper_trading.html')
 
 
