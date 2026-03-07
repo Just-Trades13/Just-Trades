@@ -496,7 +496,9 @@ def check_trial_abuse(
     ip_address: str = None,
     email: str = None,
     card_fingerprint: str = None,
-    whop_user_id: str = None
+    whop_user_id: str = None,
+    username: str = None,
+    display_name: str = None
 ) -> Tuple[bool, str, List[str]]:
     """
     Comprehensive trial abuse check across all fingerprint types.
@@ -555,6 +557,13 @@ def check_trial_abuse(
             flags.append('whop_user_reuse')
             block_reasons.append(f"Whop account: {reason}")
 
+    # Check similar profiles (username/display name similarity — flag only, no block)
+    if username or display_name:
+        similar_profiles = check_similar_profiles(username, display_name)
+        if similar_profiles:
+            flags.append('similar_profile_found')
+            # Don't add to block_reasons — flag for admin review only
+
     # Determine if should block
     # Block if: device reuse, card reuse, email pattern reuse, or disposable email
     should_block = bool(set(flags) & {'device_reuse', 'card_reuse', 'email_pattern_reuse', 'disposable_email'})
@@ -575,7 +584,9 @@ def record_trial_start(
     ip_address: str = None,
     card_fingerprint: str = None,
     user_agent: str = None,
-    metadata: dict = None
+    metadata: dict = None,
+    username: str = None,
+    display_name: str = None
 ) -> Tuple[bool, str]:
     """
     Record all fingerprints when a trial starts.
@@ -634,6 +645,20 @@ def record_trial_start(
         if is_abuse:
             abuse_detected = True
             messages.append(msg)
+
+    # Record username (for similarity detection — not abuse-blocking)
+    if username:
+        record_fingerprint(
+            'username', username,
+            whop_membership_id, whop_user_id, email, ip_address, user_agent, metadata
+        )
+
+    # Record display name (for similarity detection — not abuse-blocking)
+    if display_name:
+        record_fingerprint(
+            'display_name', display_name,
+            whop_membership_id, whop_user_id, email, ip_address, user_agent, metadata
+        )
 
     return abuse_detected, "; ".join(messages) if messages else "Trial recorded"
 
