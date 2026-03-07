@@ -3190,14 +3190,35 @@ def execute_trade_simple(
                                         "timeInForce": "GTC",
                                         "isAutomated": True
                                     }
-                                sl_result = await tradovate.place_order_smart(sl_order_data, use_websocket=False)
-                                if sl_result and sl_result.get('success'):
-                                    sl_order_id = sl_result.get('orderId') or sl_result.get('id')
-                                    logger.info(f"✅ [{acct_name}] SL PLACED @ {sl_price}")
-                                else:
-                                    error_msg = sl_result.get('error', 'Unknown error') if sl_result else 'No response'
-                                    logger.warning(f"⚠️ [{acct_name}] SL order failed: {error_msg}")
-                                    logger.warning(f"   Full response: {sl_result}")
+                                # CRITICAL: NEVER GIVE UP on SL placement - keep retrying until success
+                                # SL protection is essential - positions without SL have UNLIMITED loss potential
+                                sl_result = None
+                                sl_max_attempts = 10
+                                sl_placed = False
+
+                                for sl_attempt in range(sl_max_attempts):
+                                    sl_result = await tradovate.place_order_smart(sl_order_data, use_websocket=False)
+                                    if sl_result and sl_result.get('success'):
+                                        sl_order_id = sl_result.get('orderId') or sl_result.get('id')
+                                        logger.info(f"✅ [{acct_name}] SL PLACED @ {sl_price} after {sl_attempt+1} attempt(s)")
+                                        sl_placed = True
+                                        break
+                                    else:
+                                        error_msg = sl_result.get('error', 'Unknown error') if sl_result else 'No response'
+                                        logger.warning(f"⚠️ [{acct_name}] SL placement attempt {sl_attempt+1}/{sl_max_attempts} failed: {error_msg}")
+
+                                        # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
+                                        sl_wait = min(2 ** sl_attempt, 10)
+                                        if sl_attempt < sl_max_attempts - 1:
+                                            logger.info(f"   ⏳ Retrying SL in {sl_wait}s...")
+                                            await asyncio.sleep(sl_wait)
+
+                                if not sl_placed:
+                                    logger.error(f"❌❌❌ [{acct_name}] CRITICAL: FAILED to place SL after {sl_max_attempts} attempts!")
+                                    logger.error(f"   Position: {broker_side} {broker_qty} @ {broker_avg} has NO STOP LOSS PROTECTION!")
+                                    logger.error(f"   SL should be @ {sl_price} ({sl_action} {broker_qty})")
+                                    logger.error(f"   Last error: {sl_result.get('error') if sl_result else 'No response'}")
+                                    logger.error(f"   ⚠️ MANUAL INTERVENTION REQUIRED - Position has UNLIMITED downside risk!")
                     
                     # CRITICAL: Register TP/SL as OCO pair so one cancels the other when filled
                     if tp_order_id and sl_order_id:
