@@ -3283,7 +3283,9 @@ def execute_trade_simple(
                         'tp_order_id': tp_order_id,
                         'sl_price': sl_price,
                         'sl_order_id': sl_order_id,
-                        'acct_name': acct_name
+                        'acct_name': acct_name,
+                        'tp_failed': (tp_price is not None and not tp_order_id),
+                        'sl_failed': (sl_ticks and sl_ticks > 0 and not sl_order_id),
                     }
                 finally:
                     # Clean up non-pooled connections to prevent resource leaks
