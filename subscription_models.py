@@ -855,6 +855,8 @@ def get_user_plan_tier(user_id: int) -> str:
         return 'elite'
     elif 'premium' in plan_slug:
         return 'premium'
+    elif 'copy_trader' in plan_slug:
+        return 'copy_trader'
     elif 'basic' in plan_slug:
         return 'basic'
     

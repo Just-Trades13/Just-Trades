@@ -195,6 +195,12 @@
         border: 1px solid rgba(168, 85, 247, 0.3);
     }
     
+    .badge-tier-pro {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
     .badge-tier-elite {
         background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.15));
         color: #f59e0b;
@@ -815,6 +821,81 @@
         border-top: 1px solid rgba(148,163,184,0.15);
     }
     .pnl-row.net-liq .pnl-value { color: #38bdf8; }
+
+    /* Search & Filter Bar */
+    .search-filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 16px 20px;
+        background: rgba(17, 26, 47, 0.6);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+    }
+    .search-input-wrap {
+        position: relative;
+        flex: 1;
+        min-width: 220px;
+    }
+    .search-input-wrap .material-icons {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 20px;
+        pointer-events: none;
+    }
+    .search-input-wrap input {
+        width: 100%;
+        padding: 10px 12px 10px 40px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-light);
+        font-size: 0.9rem;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .search-input-wrap input:focus {
+        border-color: var(--accent-teal);
+    }
+    .search-input-wrap input::placeholder {
+        color: var(--text-muted);
+    }
+    .filter-buttons {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .filter-btn {
+        padding: 8px 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .filter-btn:hover {
+        border-color: var(--accent-teal);
+        color: var(--text-light);
+    }
+    .filter-btn.active {
+        background: rgba(45, 212, 191, 0.15);
+        border-color: var(--accent-teal);
+        color: var(--accent-teal);
+    }
+    .filter-result-count {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-left: auto;
+        white-space: nowrap;
+    }
 </style>
 {% endblock %}
 
@@ -882,6 +963,22 @@
             <div class="stat-label">Pending Approval</div>
         </div>
     </div>
+</div>
+
+<!-- Search & Filter Bar -->
+<div class="search-filter-bar">
+    <div class="search-input-wrap">
+        <span class="material-icons">search</span>
+        <input type="text" id="userSearchInput" placeholder="Search by username, email, or display name..." oninput="filterUsers()">
+    </div>
+    <div class="filter-buttons">
+        <button class="filter-btn active" data-filter="all" onclick="setFilter(this)">All</button>
+        <button class="filter-btn" data-filter="online" onclick="setFilter(this)">Online</button>
+        <button class="filter-btn" data-filter="offline" onclick="setFilter(this)">Offline</button>
+        <button class="filter-btn" data-filter="pending" onclick="setFilter(this)">Pending</button>
+        <button class="filter-btn" data-filter="admins" onclick="setFilter(this)">Admins</button>
+    </div>
+    <div class="filter-result-count" id="filterResultCount"></div>
 </div>
 
 {% if pending_username_changes %}
@@ -981,7 +1078,7 @@
                 </td>
                 <td>
                     {% if not user.is_approved and not user.is_admin %}
-                    <span class="badge badge-pending">
+                    <span class="badge badge-pending" id="status-badge-{{ user.id }}">
                         <span class="material-icons" style="font-size:14px">hourglass_empty</span>
                         Pending
                     </span>
@@ -1187,6 +1284,7 @@
                 </label>
                 <select id="edit_subscription" name="subscription">
                     <option value="none">No Subscription</option>
+                    <option value="pro_copy_trader">Pro Copy Trader ($100/mo) - Copy trader only, 10 accounts</option>
                     <option value="platform_basic">Basic ($200/mo) - 5 accounts</option>
                     <option value="platform_premium">Premium ($500/mo) - 100 accounts, Screener, Signals</option>
                     <option value="platform_elite">Elite ($1000/mo) - Unlimited, API, Priority Support</option>
@@ -1207,6 +1305,7 @@
 // Tier display configuration
 const tierConfig = {
     'none': { icon: 'block', label: 'None', class: 'badge-tier-none' },
+    'copy_trader': { icon: 'people', label: 'Copy Trader', class: 'badge-tier-pro' },
     'basic': { icon: 'star_border', label: 'Basic', class: 'badge-tier-basic' },
     'premium': { icon: 'star_half', label: 'Premium', class: 'badge-tier-premium' },
     'elite': { icon: 'star', label: 'Elite', class: 'badge-tier-elite' }
@@ -1234,6 +1333,12 @@ function loadUserSubscription(userId) {
         .then(data => {
             if (data.success) {
                 updateTierBadge(badge, data.tier);
+                // Fix "Pending" for cancelled users — they have subscription history
+                var statusBadge = document.getElementById('status-badge-' + userId);
+                if (statusBadge && statusBadge.classList.contains('badge-pending') && data.has_subscription_history) {
+                    statusBadge.className = 'badge badge-offline';
+                    statusBadge.innerHTML = '<span class="material-icons" style="font-size:14px">cancel</span> No Subscription';
+                }
             } else {
                 updateTierBadge(badge, 'none');
             }
@@ -2035,6 +2140,58 @@ document.addEventListener('keydown', function(e) {
         hideUserDetailsModal();
     }
 });
+
+// --- User Search & Filter ---
+let activeFilter = 'all';
+
+function setFilter(btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    filterUsers();
+}
+
+function filterUsers() {
+    const query = document.getElementById('userSearchInput').value.toLowerCase().trim();
+    const table = document.querySelector('.users-table-container .users-table');
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
+    let shown = 0;
+    const total = rows.length;
+
+    rows.forEach(row => {
+        const userInfo = row.querySelector('.user-info');
+        if (!userInfo) { row.style.display = ''; shown++; return; }
+
+        const name = (row.querySelector('.user-name') || {}).textContent || '';
+        const email = (row.querySelector('.user-email') || {}).textContent || '';
+        const searchText = (name + ' ' + email).toLowerCase();
+
+        const matchesSearch = !query || searchText.includes(query);
+
+        let matchesFilter = true;
+        if (activeFilter !== 'all') {
+            const badges = row.querySelectorAll('.badge');
+            const badgeTexts = Array.from(badges).map(b => b.textContent.trim().toLowerCase());
+            if (activeFilter === 'online') matchesFilter = badgeTexts.includes('online');
+            else if (activeFilter === 'offline') matchesFilter = badgeTexts.includes('offline');
+            else if (activeFilter === 'pending') matchesFilter = badgeTexts.includes('pending');
+            else if (activeFilter === 'admins') matchesFilter = badgeTexts.includes('admin');
+        }
+
+        if (matchesSearch && matchesFilter) {
+            row.style.display = '';
+            shown++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    document.getElementById('filterResultCount').textContent = 'Showing ' + shown + ' of ' + total + ' users';
+}
+
+// Initialize count on page load
+document.addEventListener('DOMContentLoaded', function() { filterUsers(); });
 
 // Close details modal on background click
 document.getElementById('userDetailsModal').addEventListener('click', function(e) {
