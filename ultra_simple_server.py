@@ -15898,6 +15898,8 @@ def broker_execution_worker(worker_id=0):
             is_long = task.get('is_long', True)
             risk_config = task.get('risk_config', {})  # NEW: Get risk_config for trailing stop/break-even
             sl_type = task.get('sl_type', 'Fixed')  # NEW: Get sl_type
+            same_direction_ignore = task.get('same_direction_ignore', False)  # Bug #58: from webhook handler
+            add_position_size = task.get('add_position_size', 0)  # Bug #58: DCA sizing
             queued_at = task.get('queued_at', 0)  # When signal was queued
             signal_price = task.get('signal_price', 0)  # Original signal price
             signal_id = task.get('signal_id', f'sig_broker_{uuid.uuid4().hex[:8]}')  # Pipeline tracking
@@ -15958,7 +15960,9 @@ def broker_execution_worker(worker_id=0):
                     quantity=quantity,
                     tp_ticks=tp_ticks,
                     sl_ticks=sl_ticks if sl_ticks > 0 else 0,
-                    risk_config=risk_config  # NEW: Pass risk_config for trailing stop/break-even
+                    risk_config=risk_config,  # NEW: Pass risk_config for trailing stop/break-even
+                    same_direction_ignore=same_direction_ignore,  # Bug #58
+                    add_position_size=add_position_size,  # Bug #58
                 )
 
                 logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
@@ -17854,18 +17858,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # POSITION SIZING - Priority: Webhook risk > Webhook qty > Trader > Recorder
         # ============================================================
 
-        # Check for existing open position first (needed for same_direction_ignore and DCA)
-        cursor.execute(f'''
-            SELECT * FROM recorded_trades
-            WHERE recorder_id = {placeholder} AND status = 'open'
-            ORDER BY entry_time DESC LIMIT 1
-        ''', (recorder_id,))
-        existing_position_row = cursor.fetchone()
+        # Bug #58: Removed existing_position DB query — same_direction_ignore and DCA sizing
+        # now handled by broker worker using real broker position state (more accurate, faster).
         existing_position = None
         existing_side = None
-        if existing_position_row:
-            existing_position = dict(zip([desc[0] for desc in cursor.description], existing_position_row))
-            existing_side = existing_position.get('side', '')
 
         # ============================================================
         # SAME DIRECTION IGNORE - Block duplicate signals
@@ -18436,7 +18432,9 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'queued_at': time.time(),  # For staleness check - reject if too old
                 'signal_price': current_price,  # Original signal price for staleness comparison
                 'signal_id': signal_id,  # Pipeline tracking
-                'signal_blocking': recorder.get('signal_blocking', False)  # Pass through for SET after execution
+                'signal_blocking': recorder.get('signal_blocking', False),  # Pass through for SET after execution
+                'same_direction_ignore': bool(effective_same_direction_ignore),  # Bug #58: moved to broker worker
+                'add_position_size': int(trader_add_size) if trader_add_size is not None and int(trader_add_size) > 0 else 0,  # Bug #58: DCA sizing in broker worker
             }
 
             broker_was_queued = False  # Track if we successfully queued
