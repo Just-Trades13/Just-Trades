@@ -101,11 +101,32 @@ def paper_state():
 
 @paper_bp.route('/paper/analysis', methods=['GET'])
 def paper_analysis():
-    """Get MAE/MFE analytics."""
+    """Get MAE/MFE analytics, optionally filtered by strategy_id."""
     if not _pipeline:
         return jsonify({"error": "not initialized"}), 503
     account = request.args.get('account', 'default')
-    return jsonify(_pipeline.get_analysis(account))
+    strategy_id = request.args.get('strategy_id', '').strip() or None
+    return jsonify(_pipeline.get_analysis(account, strategy_id=strategy_id))
+
+
+@paper_bp.route('/paper/strategies', methods=['GET'])
+def paper_strategies():
+    """List distinct strategy_ids from trade history."""
+    if not _pipeline:
+        return jsonify({"error": "not initialized"}), 503
+    account = request.args.get('account', 'default')
+    state = _pipeline.get_state(account)
+    seen = set()
+    for t in state.get('history', []):
+        sid = t.get('strategy_id', '').strip()
+        if sid:
+            seen.add(sid)
+    for p in state.get('open_positions', []):
+        sid = p.get('strategy_id', '').strip()
+        if sid:
+            seen.add(sid)
+    return jsonify({"strategies": sorted(seen)})
+
 
 
 @paper_bp.route('/paper/history', methods=['GET'])

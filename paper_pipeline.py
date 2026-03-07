@@ -470,8 +470,8 @@ class PaperPipeline:
     def get_state(self, account="default"):
         return self.engine.get_state(account)
 
-    def get_analysis(self, account="default"):
-        return self.engine.get_mae_mfe_analysis(account)
+    def get_analysis(self, account="default", strategy_id=None):
+        return self.engine.get_mae_mfe_analysis(account, strategy_id=strategy_id)
 
     # ── Broadcast ───────────────────────────────────────────────────────────
 

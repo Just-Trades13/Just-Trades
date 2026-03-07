@@ -588,10 +588,12 @@ class PaperTradingEngine:
                 'account': account,
             }
 
-    def get_mae_mfe_analysis(self, account="default"):
-        """Analytics: MAE/MFE distributions, strategy insights."""
+    def get_mae_mfe_analysis(self, account="default", strategy_id=None):
+        """Analytics: MAE/MFE distributions, strategy insights. Optional strategy_id filter."""
         trades = [t for t in self._history
                   if t.get('mae_points') is not None and t.get('mfe_points') is not None]
+        if strategy_id:
+            trades = [t for t in trades if t.get('strategy_id') == strategy_id]
 
         if not trades:
             return {'trades_analyzed': 0, 'insights': []}

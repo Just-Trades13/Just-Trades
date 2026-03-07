@@ -28219,9 +28219,25 @@ def api_backtest_upload():
             )
             db.add(imp)
             db.flush()  # get imp.id
-            # Individual trade rows (tv_backtest_trades) skipped — summary metrics
-            # in tv_backtest_imports are all the dashboard needs. Saves ~5-10s on
-            # large xlsx files (1700+ rows x remote PostgreSQL round-trips).
+            # Store individual trade rows for dashboard display
+            from app.models import TVBacktestTrade
+            trade_objects = []
+            for idx, r in enumerate(rows):
+                trade_objects.append(TVBacktestTrade(
+                    import_id=imp.id,
+                    trade_num=idx + 1,
+                    type=str(r.get('type', '')).strip(),
+                    signal=str(r.get('signal', '')).strip(),
+                    date_time=str(r.get('date_time', '')).strip(),
+                    price=_parse_tv_number(r.get('price')),
+                    contracts=_parse_tv_number(r.get('contracts')),
+                    profit=_parse_tv_number(r.get('profit')),
+                    cumulative_profit=_parse_tv_number(r.get('cumulative_profit')),
+                    run_up=_parse_tv_number(r.get('run_up')),
+                    drawdown=_parse_tv_number(r.get('drawdown')),
+                ))
+            if trade_objects:
+                db.bulk_save_objects(trade_objects)
             db.commit()
             logger.info(f"Backtest upload: DB commit done, total time {_t.time()-_t0:.2f}s")
 
