@@ -3851,6 +3851,7 @@ _CSRF_EXEMPT_PREFIXES = (
     '/webhooks/',           # Whop webhook signals (external POST)
     '/api/oauth/callback',  # Tradovate OAuth redirect
     '/api/trading-engine/', # Internal health check
+    '/paper/',              # Paper trading signals (external POST)
 )
 
 @app.before_request
@@ -3962,6 +3963,15 @@ try:
     logger.info("Marketing routes blueprint registered")
 except ImportError as e:
     logger.warning(f"Marketing routes blueprint not available: {e}")
+
+# Paper trading routes blueprint
+try:
+    from paper_routes import paper_bp, init_paper_routes
+    init_paper_routes(socketio=socketio, market_data_cache=_market_data_cache)
+    app.register_blueprint(paper_bp)
+    logger.info("Paper trading routes blueprint registered")
+except ImportError as e:
+    logger.warning(f"Paper trading blueprint not available: {e}")
 
 # Template filter for date formatting
 @app.template_filter('format_datetime')
@@ -34903,6 +34913,14 @@ if __name__ == '__main__':
                     }, namespace='/')
                 except:
                     pass  # Ignore if no clients connected
+                # Feed tick to paper trading engine (fire-and-forget, never blocks)
+                try:
+                    from paper_routes import get_paper_pipeline
+                    _pp = get_paper_pipeline()
+                    if _pp:
+                        _pp.on_tick(symbol, float(price_data.get('last_price', 0)))
+                except Exception:
+                    pass
 
             ticker, paper_engine = start_price_service(on_price_update=on_price_update)
             logger.info(f"✅ TradingView price service started - tracking {len(ticker.symbols)} symbols")

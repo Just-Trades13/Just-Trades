@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+
+{% block title %}Paper Trading — Just.Trades.{% endblock %}
+
+{% block content %}
+<!-- Paper Trading Header -->
+<div class="paper-header">
+    <div class="paper-header-left">
+        <div style="display:flex;align-items:center;gap:8px">
+            <div id="paper-status-dot" class="paper-status-dot"></div>
+            <span class="paper-brand">JUST TRADES PAPER</span>
+        </div>
+        <div class="paper-ticker">
+            <span class="paper-ticker-symbol">MNQ1!</span>
+            <span id="paper-ticker-price" class="paper-ticker-price">—</span>
+            <span id="paper-ticker-arrow" class="paper-ticker-arrow"></span>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px">
+        <div id="paper-header-stats" class="paper-header-stats"></div>
+        <button id="paper-flatten-btn" class="paper-flatten-btn">FLATTEN ALL</button>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="paper-wrap">
+    <!-- Tabs -->
+    <div id="paper-tabs" class="paper-tabs"></div>
+
+    <!-- Tab Content -->
+    <div id="paper-content"></div>
+</div>
+
+<!-- Paper Trading CSS + JS -->
+<link rel="stylesheet" href="/static/css/paper_trading.css">
+<script src="/static/js/paper_trading.js"></script>
+{% endblock %}
