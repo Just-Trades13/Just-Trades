@@ -1855,7 +1855,7 @@ BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 # immediately (under 50ms) and processes them in parallel background workers.
 _fast_webhook_queue = Queue(maxsize=10000)
 _fast_webhook_enabled = True  # Fixed: workers now pass body directly, no Flask context needed
-_fast_webhook_worker_count = 100  # Number of parallel workers for instant processing
+_fast_webhook_worker_count = 10  # Bug #58: 100→10 — GIL makes extra threads overhead, not parallelism
 
 def fast_webhook_worker(worker_id):
     """Background worker that processes raw webhooks from the fast queue.
@@ -1996,7 +1996,7 @@ if _EXTERNAL_ENGINE:
 else:
     broker_execution_queue = Queue(maxsize=5000)
     logger.info("🔗 Broker queue: In-memory (single process mode)")
-_broker_execution_worker_count = 100  # Number of parallel workers for HIVE MIND instant execution
+_broker_execution_worker_count = 10  # Bug #58: 100→10 — real parallelism is asyncio.gather() in broker worker
 
 # ============================================================================
 # WEBHOOK HEALTH TRACKING - Detect stuck webhook processing
