@@ -7360,19 +7360,22 @@ def admin_get_user_subscription(user_id):
         return jsonify({'success': False, 'error': 'Subscription system not available'}), 400
     
     try:
-        from subscription_models import get_user_subscription, get_user_plan_tier, get_all_plans
-        
+        from subscription_models import get_user_subscription, get_user_plan_tier, get_all_plans, get_all_user_subscriptions
+
         platform_sub = get_user_subscription(user_id, plan_type='platform')
         discord_sub = get_user_subscription(user_id, plan_type='discord')
         tier = get_user_plan_tier(user_id)
         all_plans = get_all_plans()
-        
+        all_subs = get_all_user_subscriptions(user_id)
+
         return jsonify({
             'success': True,
             'platform_subscription': platform_sub,
             'discord_subscription': discord_sub,
             'tier': tier,
-            'available_plans': all_plans
+            'available_plans': all_plans,
+            'has_subscription_history': bool(all_subs),
+            'latest_status': all_subs[0]['status'] if all_subs else None
         })
     except Exception as e:
         logger.error(f"❌ Failed to get subscription for user {user_id}: {e}")
