@@ -16714,7 +16714,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 data = request.get_json(force=True, silent=True) or {}
                 if not data:
                     data = request.form.to_dict() or {}
-            except:
+            except Exception:
                 pass
 
         if not data:
