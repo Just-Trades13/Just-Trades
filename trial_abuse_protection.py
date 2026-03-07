@@ -426,6 +426,67 @@ def check_similar_emails(email: str) -> List[Dict]:
     return similar
 
 
+def normalize_username(name: str) -> str:
+    """Normalize a username/display name for similarity comparison.
+    Lowercase, strip separators (-_. and spaces), strip trailing digits.
+    Example: 'John_Trades2' -> 'johntrades'
+    """
+    if not name:
+        return ''
+    normalized = name.lower()
+    normalized = re.sub(r'[-_.\s]', '', normalized)
+    normalized = re.sub(r'\d+$', '', normalized)
+    return normalized
+
+
+def check_similar_profiles(username: str = None, display_name: str = None) -> List[Dict]:
+    """Find stored usernames/display names that normalize to the same value.
+    Returns matches where normalized forms are equal but raw values differ (avoids self-match).
+    """
+    matches = []
+    targets = []
+    if username:
+        targets.append(('username', username))
+    if display_name:
+        targets.append(('display_name', display_name))
+
+    if not targets:
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    is_postgres = _is_postgres()
+    placeholder = '%s' if is_postgres else '?'
+
+    for fp_type, raw_value in targets:
+        normalized = normalize_username(raw_value)
+        if not normalized:
+            continue
+
+        cursor.execute(f'''
+            SELECT fingerprint_value, email, whop_user_id, first_seen
+            FROM trial_fingerprints
+            WHERE fingerprint_type = {placeholder}
+        ''', (fp_type,))
+
+        for row in cursor.fetchall():
+            stored_value, stored_email, stored_whop_id, first_seen = row
+            if stored_value == raw_value:
+                continue  # skip exact self-match
+            if normalize_username(stored_value) == normalized:
+                matches.append({
+                    'type': fp_type,
+                    'stored_value': stored_value,
+                    'input_value': raw_value,
+                    'normalized': normalized,
+                    'email': stored_email,
+                    'whop_user_id': stored_whop_id,
+                    'first_seen': str(first_seen)
+                })
+
+    return matches
+
+
 # ============================================================================
 # COMPREHENSIVE ABUSE CHECK
 # ============================================================================
