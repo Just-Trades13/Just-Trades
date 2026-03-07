@@ -172,6 +172,7 @@
             { id: 'positions', label: 'Open (' + positions.length + ')' },
             { id: 'history', label: 'History (' + history.length + ')' },
             { id: 'analytics', label: 'MAE/MFE' },
+            { id: 'backtests', label: 'Backtests' },
         ];
         var el = document.getElementById('paper-tabs');
         if (!el) return;
@@ -202,6 +203,8 @@
             renderHistory(el);
         } else if (currentTab === 'analytics') {
             renderAnalytics(el);
+        } else if (currentTab === 'backtests') {
+            renderBacktests(el);
         }
     }
 
@@ -429,6 +432,123 @@
 
         container.innerHTML = gridHTML + distHTML + insightsHTML;
     }
+
+    // ── Backtests Tab ──────────────────────────────────────────────────
+    var _backtestsCache = null;
+
+    function renderBacktests(container) {
+        container = container || document.getElementById('paper-content');
+        if (!container) return;
+
+        if (_backtestsCache) {
+            _renderBacktestCards(container, _backtestsCache);
+        } else {
+            container.innerHTML = '<div class="paper-empty" style="padding:40px">Loading backtests...</div>';
+        }
+
+        // Fetch fresh data
+        fetch('/api/backtest/list').then(function(r) { return r.json(); }).then(function(data) {
+            if (data.success && data.imports) {
+                _backtestsCache = data.imports;
+                if (currentTab === 'backtests') {
+                    _renderBacktestCards(container, data.imports);
+                }
+            }
+        }).catch(function() {});
+    }
+
+    function _esc(s) {
+        var d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+    }
+
+    function _renderBacktestCards(container, imports) {
+        if (!imports || imports.length === 0) {
+            container.innerHTML = '<div class="paper-empty" style="padding:60px">' +
+                'No backtest imports yet.<div class="paper-empty-hint">' +
+                'Upload a TradingView CSV/XLSX from the main dashboard.</div></div>';
+            return;
+        }
+
+        var html = '<div class="paper-bt-grid">';
+        imports.forEach(function(imp) {
+            var pnlClass = imp.net_pnl >= 0 ? 'positive' : 'negative';
+            var pnlStr = (imp.net_pnl >= 0 ? '+$' : '-$') + Math.abs(imp.net_pnl).toFixed(2);
+            var wrClass = imp.win_rate >= 55 ? 'positive' : imp.win_rate >= 45 ? '' : 'negative';
+            var pfClass = imp.profit_factor >= 1.5 ? 'positive' : imp.profit_factor >= 1.0 ? '' : 'negative';
+
+            html += '<div class="paper-bt-card">' +
+                '<div class="paper-bt-head">' +
+                    '<span class="paper-bt-name">' + _esc(imp.name || 'Untitled') + '</span>' +
+                    (imp.symbol ? '<span class="paper-bt-symbol">' + _esc(imp.symbol) + '</span>' : '') +
+                '</div>' +
+                '<div class="paper-bt-pnl ' + pnlClass + '">' + pnlStr + '</div>' +
+                '<div class="paper-bt-stats">' +
+                    '<div><span class="paper-bt-stat-l">Win Rate</span><span class="paper-bt-stat-v ' + wrClass + '">' + imp.win_rate.toFixed(1) + '%</span></div>' +
+                    '<div><span class="paper-bt-stat-l">PF</span><span class="paper-bt-stat-v ' + pfClass + '">' + imp.profit_factor.toFixed(2) + '</span></div>' +
+                    '<div><span class="paper-bt-stat-l">Trades</span><span class="paper-bt-stat-v">' + imp.total_trades + '</span></div>' +
+                    '<div><span class="paper-bt-stat-l">Max DD</span><span class="paper-bt-stat-v negative">-$' + Math.abs(imp.max_drawdown).toFixed(2) + '</span></div>' +
+                '</div>' +
+                '<div class="paper-bt-dates">' + _esc(imp.start_date || '') + ' — ' + _esc(imp.end_date || '') + '</div>' +
+                '<button class="paper-bt-expand" onclick="window._togglePaperBtTrades(' + imp.id + ', this)">Show Trades</button>' +
+                '<div class="paper-bt-trades" id="pbt_' + imp.id + '" style="display:none"></div>' +
+            '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // Expose toggle to onclick handlers
+    window._togglePaperBtTrades = function(importId, btn) {
+        var panel = document.getElementById('pbt_' + importId);
+        if (!panel) return;
+
+        if (panel.style.display !== 'none') {
+            panel.style.display = 'none';
+            btn.textContent = 'Show Trades';
+            return;
+        }
+
+        panel.style.display = 'block';
+        btn.textContent = 'Hide Trades';
+        panel.innerHTML = '<div style="padding:8px;color:#888">Loading...</div>';
+
+        fetch('/api/backtest/' + importId + '/trades').then(function(r) { return r.json(); }).then(function(data) {
+            if (!data.success || !data.trades || data.trades.length === 0) {
+                panel.innerHTML = '<div style="padding:8px;color:#888">No individual trades stored.</div>';
+                return;
+            }
+
+            var tbl = '<table class="paper-bt-table"><thead><tr>' +
+                '<th>#</th><th>Type</th><th>Signal</th><th>Date</th><th>Price</th><th>Qty</th><th>P&L</th><th>MFE</th><th>MAE</th>' +
+                '</tr></thead><tbody>';
+
+            data.trades.forEach(function(t) {
+                var isExit = (t.type || '').toLowerCase().indexOf('exit') === 0;
+                var pnl = t.profit || 0;
+                var pc = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
+                var pStr = isExit && pnl !== 0 ? ((pnl > 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2)) : '';
+                var mfe = t.run_up || 0;
+                var mae = t.drawdown || 0;
+
+                tbl += '<tr style="opacity:' + (isExit ? '1' : '0.6') + '">' +
+                    '<td>' + (t.trade_num || '') + '</td>' +
+                    '<td>' + _esc(t.type || '') + '</td>' +
+                    '<td>' + _esc(t.signal || '') + '</td>' +
+                    '<td>' + _esc(t.date_time || '') + '</td>' +
+                    '<td>' + (t.price ? '$' + t.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '') + '</td>' +
+                    '<td>' + (t.contracts || '') + '</td>' +
+                    '<td class="' + pc + '">' + pStr + '</td>' +
+                    '<td style="color:#00c896">' + (isExit && mfe ? '+$' + Math.abs(mfe).toFixed(2) : '') + '</td>' +
+                    '<td style="color:#ff4757">' + (isExit && mae ? '-$' + Math.abs(mae).toFixed(2) : '') + '</td>' +
+                '</tr>';
+            });
+
+            tbl += '</tbody></table>';
+            panel.innerHTML = '<div class="paper-bt-table-wrap">' + tbl + '</div>';
+        }).catch(function(err) {
+            panel.innerHTML = '<div style="padding:8px;color:#ff4757">Failed: ' + err.message + '</div>';
+        });
+    };
 
     // ── Master render ───────────────────────────────────────────────────
     function renderAll() {
