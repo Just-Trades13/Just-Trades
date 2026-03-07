@@ -5002,7 +5002,7 @@
     async function loadPaperHistoryPaginated(page) {
         page = page || 1;
         try {
-            if (!selectedStrategyId) {
+            if (!selectedStrategyId && !selectedBacktestId) {
                 const tbody = document.getElementById('paperHistoryBody');
                 const paginEl = document.getElementById('paginationControls');
                 const badgeEl = document.getElementById('tradeCountBadge');
@@ -5011,7 +5011,12 @@
                 if (badgeEl) badgeEl.textContent = '';
                 return;
             }
-            let url = `/api/paper-trades/history?page=${page}&per_page=20&recorder_id=${selectedStrategyId}`;
+            let url;
+            if (selectedBacktestId) {
+                url = `/api/backtest/${selectedBacktestId}/history?page=${page}&per_page=20`;
+            } else {
+                url = `/api/paper-trades/history?page=${page}&per_page=20&recorder_id=${selectedStrategyId}`;
+            }
             if (currentHistoryFilter) url += `&filter=${currentHistoryFilter}`;
 
             const response = await fetch(url);
@@ -5287,8 +5292,8 @@
     // Load PnL chart from dedicated chart-data endpoint
     async function loadPnlChart() {
         try {
-            // Don't load combined data — require a strategy selection
-            if (!selectedStrategyId) {
+            // Don't load combined data — require a strategy or backtest selection
+            if (!selectedStrategyId && !selectedBacktestId) {
                 if (equityChart) {
                     equityChart.destroy();
                     equityChart = null;
@@ -5305,8 +5310,12 @@
                 return;
             }
 
-            let url = '/api/paper-trades/chart-data?limit=500';
-            if (selectedStrategyId) url += `&recorder_id=${selectedStrategyId}`;
+            let url;
+            if (selectedBacktestId) {
+                url = `/api/backtest/${selectedBacktestId}/chart-data`;
+            } else {
+                url = `/api/paper-trades/chart-data?limit=500&recorder_id=${selectedStrategyId}`;
+            }
 
             const response = await fetch(url);
             const data = await response.json();
@@ -5454,12 +5463,10 @@
     // Strategy Selector & Filtering
     // ============================================================
     let selectedStrategyId = null;
+    let selectedBacktestId = null;
 
     async function loadStrategySelector() {
         try {
-            const response = await fetch('/api/recorders');
-            const data = await response.json();
-
             const selector = document.getElementById('strategySelector');
             if (!selector) return;
 
@@ -5468,13 +5475,41 @@
 
             selector.innerHTML = '<option value="">All Strategies</option>';
 
-            if (data.recorders && data.recorders.length > 0) {
-                data.recorders.forEach(rec => {
+            // Fetch recorders
+            const recResp = await fetch('/api/recorders');
+            const recData = await recResp.json();
+
+            if (recData.recorders && recData.recorders.length > 0) {
+                const recGroup = document.createElement('optgroup');
+                recGroup.label = 'Live Recorders';
+                recData.recorders.forEach(rec => {
                     const option = document.createElement('option');
                     option.value = rec.id;
                     option.textContent = rec.name;
-                    selector.appendChild(option);
+                    recGroup.appendChild(option);
                 });
+                selector.appendChild(recGroup);
+            }
+
+            // Fetch backtest imports
+            try {
+                const btResp = await fetch('/api/backtest/list');
+                const btData = await btResp.json();
+                if (btData.success && btData.imports && btData.imports.length > 0) {
+                    const btGroup = document.createElement('optgroup');
+                    btGroup.label = 'Backtest Imports';
+                    btData.imports.forEach(imp => {
+                        const option = document.createElement('option');
+                        option.value = 'bt_' + imp.id;
+                        const pnl = imp.net_pnl || 0;
+                        const pnlStr = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(0);
+                        option.textContent = `${imp.name} (${pnlStr}, ${imp.total_trades} trades)`;
+                        btGroup.appendChild(option);
+                    });
+                    selector.appendChild(btGroup);
+                }
+            } catch (e) {
+                console.log('Backtest imports not available:', e);
             }
 
             // Restore selection
@@ -5488,7 +5523,15 @@
 
     function onStrategyChange() {
         const selector = document.getElementById('strategySelector');
-        selectedStrategyId = selector.value ? parseInt(selector.value) : null;
+        const val = selector.value || '';
+
+        if (val.startsWith('bt_')) {
+            selectedBacktestId = parseInt(val.substring(3));
+            selectedStrategyId = null;
+        } else {
+            selectedBacktestId = null;
+            selectedStrategyId = val ? parseInt(val) : null;
+        }
 
         // Refresh all filtered data
         loadPaperAnalytics();
@@ -5512,13 +5555,18 @@
 
     async function loadPnlCalendar() {
         try {
-            if (!selectedStrategyId) {
+            if (!selectedStrategyId && !selectedBacktestId) {
                 dailyPnlData = {};
                 renderCalendar();
                 return;
             }
 
-            let url = `/api/paper-trades/daily-pnl?days=90&recorder_id=${selectedStrategyId}`;
+            let url;
+            if (selectedBacktestId) {
+                url = `/api/backtest/${selectedBacktestId}/daily-pnl`;
+            } else {
+                url = `/api/paper-trades/daily-pnl?days=90&recorder_id=${selectedStrategyId}`;
+            }
 
             const response = await fetch(url);
             const data = await response.json();
@@ -5605,7 +5653,7 @@
     const originalLoadPaperAnalytics = loadPaperAnalytics;
     loadPaperAnalytics = async function() {
         try {
-            if (!selectedStrategyId) {
+            if (!selectedStrategyId && !selectedBacktestId) {
                 // Clear all stat cards when no strategy selected
                 const el = id => document.getElementById(id);
                 if (el('analyticsTotalPnl')) { el('analyticsTotalPnl').textContent = '--'; el('analyticsTotalPnl').className = 'analytics-value'; }
@@ -5621,7 +5669,12 @@
                 return;
             }
 
-            let url = `/api/paper-trades/analytics?recorder_id=${selectedStrategyId}`;
+            let url;
+            if (selectedBacktestId) {
+                url = `/api/backtest/${selectedBacktestId}/analytics`;
+            } else {
+                url = `/api/paper-trades/analytics?recorder_id=${selectedStrategyId}`;
+            }
 
             const response = await fetch(url);
             const data = await response.json();
