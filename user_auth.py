@@ -757,7 +757,7 @@ def login_required(f):
         
         # Verify user still exists and is active
         user = get_current_user()
-        if not user or not user.is_active:
+        if not user or not user.is_active or (not user.is_approved and not user.is_admin):
             logout_user()
             flash('Your session has expired. Please log in again.', 'warning')
             return redirect(url_for('login'))
