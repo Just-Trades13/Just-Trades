@@ -175,6 +175,41 @@ def migrate_add_is_approved():
         conn.close()
 
 
+def migrate_add_last_activation_email():
+    """
+    Add last_activation_email column to users table if it doesn't exist.
+    Stores the timestamp of the last activation email sent to persist cooldowns across deploys.
+    """
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        if db_type == 'postgresql':
+            cursor.execute('''
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'users' AND column_name = 'last_activation_email'
+            ''')
+            if not cursor.fetchone():
+                cursor.execute('ALTER TABLE users ADD COLUMN last_activation_email TIMESTAMP')
+                logger.info("✅ Added last_activation_email column to users table")
+        else:
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [row[1] if isinstance(row, tuple) else row['name'] for row in cursor.fetchall()]
+            if 'last_activation_email' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN last_activation_email DATETIME')
+                logger.info("✅ Added last_activation_email column to users table")
+
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to add last_activation_email column: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def add_user_id_to_tables():
     """
     Add user_id column to existing tables for data isolation.
@@ -881,7 +916,10 @@ def init_auth_system():
     
     # Add is_approved column to existing users table (migration)
     migrate_add_is_approved()
-    
+
+    # Add last_activation_email column to persist email cooldowns across deploys
+    migrate_add_last_activation_email()
+
     logger.info("✅ Authentication system initialized")
     return True
 

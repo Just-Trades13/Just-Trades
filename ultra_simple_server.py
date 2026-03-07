@@ -6732,10 +6732,38 @@ def admin_send_activation(user_id):
 
     try:
         from account_activation import generate_activation_token, send_activation_email
+
+        # Check 24h cooldown unless ?force=true
+        force = request.args.get('force', '').lower() == 'true'
+        if not force and hasattr(target_user, 'last_activation_email') and target_user.last_activation_email:
+            try:
+                db_ts = target_user.last_activation_email
+                if isinstance(db_ts, str):
+                    db_ts = datetime.fromisoformat(db_ts.replace('Z', '+00:00'))
+                last_epoch = db_ts.timestamp() if hasattr(db_ts, 'timestamp') else time.mktime(db_ts.timetuple())
+                elapsed = time.time() - last_epoch
+                if elapsed < 86400:
+                    hours_remaining = (86400 - elapsed) / 3600
+                    return jsonify({'success': False, 'error': f'Activation email already sent {elapsed/3600:.1f}h ago. Wait {hours_remaining:.1f}h or use ?force=true'}), 429
+            except Exception:
+                pass  # If timestamp parse fails, allow the send
+
         token = generate_activation_token(target_user.id, target_user.email)
         if token:
             sent = send_activation_email(target_user.email, token)
             if sent:
+                # Persist timestamp to DB
+                try:
+                    from user_auth import get_auth_db_connection
+                    _conn, _db_type = get_auth_db_connection()
+                    _ph = '%s' if _db_type == 'postgresql' else '?'
+                    _cur = _conn.cursor()
+                    _cur.execute(f'UPDATE users SET last_activation_email = NOW() WHERE id = {_ph}' if _db_type == 'postgresql' else f'UPDATE users SET last_activation_email = CURRENT_TIMESTAMP WHERE id = {_ph}', (target_user.id,))
+                    _conn.commit()
+                    _cur.close()
+                    _conn.close()
+                except Exception as db_e:
+                    logger.warning(f"Failed to persist activation email timestamp for user {user_id}: {db_e}")
                 logger.info(f"Admin sent activation email to {target_user.email}")
                 return jsonify({'success': True, 'message': f'Activation email sent to {target_user.email}'})
             else:
@@ -9839,7 +9867,19 @@ def _whop_membership_sync():
 
                 # Resend activation email if user hasn't activated yet
                 if user.username and user.username.startswith('whop_'):
+                    # Check DB-persisted cooldown (survives deploys) with in-memory cache as fast path
                     last_sent = _whop_email_last_resent.get(user_email, 0)
+                    if last_sent == 0 and hasattr(user, 'last_activation_email') and user.last_activation_email:
+                        try:
+                            db_ts = user.last_activation_email
+                            if isinstance(db_ts, str):
+                                db_ts = datetime.fromisoformat(db_ts.replace('Z', '+00:00'))
+                            if hasattr(db_ts, 'timestamp'):
+                                last_sent = db_ts.timestamp()
+                            else:
+                                last_sent = time.mktime(db_ts.timetuple())
+                        except Exception:
+                            pass
                     elapsed = now - last_sent
 
                     if elapsed >= WHOP_RESEND_INTERVAL:
@@ -9860,12 +9900,27 @@ def _whop_membership_sync():
                                 token = generate_activation_token(user.id, user.email)
                                 if token and send_activation_email(user.email, token):
                                     _whop_email_last_resent[user_email] = now
+                                    # Persist to DB so cooldown survives deploys
+                                    try:
+                                        from user_auth import get_auth_db_connection
+                                        _conn, _db_type = get_auth_db_connection()
+                                        _ph = '%s' if _db_type == 'postgresql' else '?'
+                                        _cur = _conn.cursor()
+                                        _cur.execute(f'UPDATE users SET last_activation_email = NOW() WHERE id = {_ph}' if _db_type == 'postgresql' else f'UPDATE users SET last_activation_email = CURRENT_TIMESTAMP WHERE id = {_ph}', (user.id,))
+                                        _conn.commit()
+                                        _cur.close()
+                                        _conn.close()
+                                    except Exception as db_e:
+                                        print(f"⚠️ Whop sync: failed to persist email timestamp for {user_email}: {db_e}")
                                     resent_count += 1
                                     print(f"📧 Whop sync: sent activation email to {user_email}")
                                 else:
                                     print(f"📧 Whop sync: email send FAILED for {user_email} — check Brevo")
                             except Exception as e:
                                 print(f"📧 Whop sync: failed to resend activation to {user_email}: {e}")
+                    else:
+                        hours_ago = elapsed / 3600
+                        print(f"📧 Whop sync: skipped resend for {user_email} — last sent {hours_ago:.1f}h ago")
             else:
                 # User doesn't exist — auto-create account + subscription
                 new_user_id = auto_create_user_from_whop(user_email, whop_user_id or 'unknown')
