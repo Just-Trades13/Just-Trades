@@ -924,7 +924,9 @@ def execute_trade_simple(
     quantity: int,
     tp_ticks: int = 0,  # 0 = no TP (TradingView strategy may handle it)
     sl_ticks: int = 0,  # 0 = no SL (TradingView strategy may handle it)
-    risk_config: dict = None  # NEW: Full risk_config for trailing stop/break-even
+    risk_config: dict = None,  # NEW: Full risk_config for trailing stop/break-even
+    same_direction_ignore: bool = False,  # Bug #58: moved from webhook handler
+    add_position_size: int = 0,  # Bug #58: DCA sizing moved from webhook handler
 ) -> Dict[str, Any]:
     """
     SIMPLE TRADE EXECUTION WITH TP/SL - Executes on ALL linked accounts.
@@ -2469,6 +2471,24 @@ def execute_trade_simple(
                         signal_side = 'LONG' if action == 'BUY' else 'SHORT'
 
                         if signal_side == existing_position_side:
+                            # Bug #58: same_direction_ignore — block same-direction signals
+                            # Moved from webhook handler to use real broker position state
+                            if same_direction_ignore:
+                                logger.info(f"⏭️ [{acct_name}] BLOCKED: same_direction_ignore=True, already {existing_position_side}")
+                                return {
+                                    'success': False,
+                                    'error': f'same_direction_ignore (already {existing_position_side})',
+                                    'acct_name': acct_name,
+                                    'skipped': True
+                                }
+                            # Bug #58: DCA add_position_size override — use add size for DCA entries
+                            if add_position_size > 0:
+                                correct_add = max(1, int(add_position_size * account_multiplier))
+                                if max_contracts > 0 and correct_add > max_contracts:
+                                    correct_add = max_contracts
+                                if correct_add != adjusted_quantity:
+                                    logger.info(f"📈 [{acct_name}] DCA sizing: {adjusted_quantity} → {correct_add} (add_position_size={add_position_size} × {account_multiplier}x)")
+                                    adjusted_quantity = correct_add
                             # SAME DIRECTION - Check if trader has DCA enabled
                             # If trader.dca_enabled is None (not explicitly set), inherit from recorder.avg_down_enabled
                             raw_dca = trader.get('dca_enabled')
