@@ -7250,7 +7250,8 @@ def admin_get_user_details(user_id):
                        t.enabled, t.initial_position_size, t.add_position_size, t.multiplier,
                        t.max_contracts, t.custom_ticker, t.is_demo,
                        r.name as recorder_name, r.ticker as recorder_ticker,
-                       a.name as account_name, a.broker as account_broker
+                       a.name as account_name, a.broker as account_broker,
+                       t.enabled_accounts
                 FROM traders t
                 LEFT JOIN recorders r ON t.recorder_id = r.id
                 LEFT JOIN accounts a ON t.account_id = a.id
@@ -7279,6 +7280,27 @@ def admin_get_user_details(user_id):
                         'account_name': row[14],
                         'account_broker': row[15]
                     }
+                # Override display values from enabled_accounts JSON (real settings)
+                ea_raw = trader.get('enabled_accounts') if hasattr(row, 'keys') else (row[16] if len(row) > 16 else None)
+                if ea_raw:
+                    try:
+                        ea_list = json.loads(ea_raw) if isinstance(ea_raw, str) else ea_raw
+                        if isinstance(ea_list, list) and len(ea_list) > 0:
+                            ea = ea_list[0]
+                            if ea.get('multiplier') is not None:
+                                trader['multiplier'] = float(ea['multiplier'])
+                            if ea.get('initial_position_size') is not None:
+                                trader['initial_position_size'] = int(ea['initial_position_size'])
+                            if ea.get('add_position_size') is not None:
+                                trader['add_position_size'] = int(ea['add_position_size'])
+                            if ea.get('max_contracts') is not None:
+                                trader['max_contracts'] = int(ea['max_contracts'])
+                            if ea.get('custom_ticker') is not None:
+                                trader['custom_ticker'] = ea['custom_ticker']
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        pass
+                # Remove raw JSON from response
+                trader.pop('enabled_accounts', None)
                 traders_list.append(trader)
         except Exception as traders_err:
             logger.debug(f"Traders query failed: {traders_err}")
