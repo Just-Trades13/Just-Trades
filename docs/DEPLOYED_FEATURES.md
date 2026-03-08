@@ -98,6 +98,7 @@
 | PG migration fix: information_schema check instead of try/except ALTER | `90bf713` | Mar 7 | **Confirmed working** |
 | Backtest analytics endpoints (analytics, chart-data, daily-pnl, history) | `319357a` | Mar 7 | **Needs verification** |
 | Dashboard Paper Trading Monitor: backtest data integration | `d3c8113` | Mar 7 | **Needs verification** |
+| Subscription gate: API 403 + page redirects for non-subscribed users | 3 commits | Mar 7 | **Confirmed working** |
 
 ---
 
