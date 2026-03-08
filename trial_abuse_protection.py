@@ -396,6 +396,9 @@ def get_email_fingerprint(email: str) -> str:
     # Remove plus addressing
     local = local.split('+')[0]
 
+    # Strip trailing digits — catches user8@, user16@ as same person
+    local = re.sub(r'\d+$', '', local)
+
     # Create fingerprint
     return f"{local}@{domain}"
 
