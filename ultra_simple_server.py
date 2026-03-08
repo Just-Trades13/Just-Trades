@@ -3802,6 +3802,69 @@ def _global_api_auth_gate():
     return jsonify({'error': 'Authentication required'}), 401
 
 # ============================================================================
+# SUBSCRIPTION GATE — Require active subscription for premium /api/ routes
+# ============================================================================
+# API paths accessible to ANY logged-in user (no subscription needed)
+_API_NO_SUBSCRIPTION_PREFIXES = (
+    '/api/oauth/',              # OAuth flow (already public)
+    '/api/public/',             # Public endpoints (already public)
+    '/api/trading-engine/',     # Health checks (already public)
+    '/api/admin/',              # Admin-only endpoints (gated by admin_required)
+    '/api/whop/',               # Whop subscription management
+    '/api/whop/status',         # Subscription status check
+    '/api/settings/',           # User settings (timezone, password, username)
+    '/api/user/',               # User preferences (theme)
+    '/api/broker-execution/',   # Monitoring (admin key)
+    '/api/tradingview/',        # Monitoring (admin key)
+    '/api/accounts/auth-status',# Monitoring (admin key)
+    '/api/changelog',           # Changelog (informational)
+    '/api/notifications',       # User notifications
+)
+
+@app.before_request
+def _api_subscription_gate():
+    """Require active platform subscription for premium /api/ routes.
+
+    Runs AFTER _global_api_auth_gate (which handles login check).
+    Admin-key requests and admin users bypass this gate.
+    Webhook/broker pipeline (/webhook/) is unaffected.
+    """
+    path = request.path
+
+    # Only check /api/ routes
+    if not path.startswith('/api/'):
+        return None
+
+    # Skip if admin API key provided (internal/monitoring requests)
+    api_key = request.headers.get('X-Admin-Key') or request.args.get('admin_key')
+    expected_key = os.environ.get('ADMIN_API_KEY')
+    if expected_key and api_key == expected_key:
+        return None
+
+    # Skip paths that don't require subscription
+    for prefix in _API_NO_SUBSCRIPTION_PREFIXES:
+        if path.startswith(prefix):
+            return None
+
+    # Check subscription for logged-in users
+    if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+        user_id = session.get('user_id')
+        if user_id:
+            # Admins always have access
+            current_user = get_current_user()
+            if current_user and current_user.is_admin:
+                return None
+
+            sub = get_user_subscription(user_id, plan_type='platform')
+            if not sub:
+                return jsonify({
+                    'error': 'Active subscription required',
+                    'subscription_required': True
+                }), 403
+
+    return None
+
+# ============================================================================
 # RATE LIMITING — Protect /login and /register from brute force
 # ============================================================================
 _rate_limit_store = {}  # {ip: [timestamp, timestamp, ...]}
