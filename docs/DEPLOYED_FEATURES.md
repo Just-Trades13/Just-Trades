@@ -1,7 +1,7 @@
 # Deployed Features — Just Trades Platform
 
 > **Complete list of stable, confirmed-working features in production.**
-> **Last updated: Feb 24, 2026**
+> **Last updated: Mar 7, 2026**
 
 ---
 
@@ -88,6 +88,16 @@
 | Admin-granted subscription protection from Whop sync | `24e899d` | Mar 7 | **Confirmed working** |
 | Paper routes init moved after SocketIO definition (startup crash fix) | `c9cf077` | Mar 7 | **Confirmed working** |
 | Admin users: copy_trader tier badge + pending vs cancelled status fix | `513e930`..`6f5613c` | Mar 7 | Working |
+| Paper Trading Engine v3 (in-memory, MAE/MFE, DCA, TP/SL/trail) | `paper_engine_v3.py` | Mar 7 | **Needs verification** |
+| Paper Pipeline (PostgreSQL, per-user, daemon threads, crash recovery) | `paper_pipeline.py` | Mar 7 | **Needs verification** |
+| Paper Routes Blueprint (REST + SocketIO /paper namespace) | `paper_routes.py` | Mar 7 | **Needs verification** |
+| Paper Trading Dashboard (CSS + JS + HTML, 4 tabs) | `static/css/`, `static/js/`, `templates/` | Mar 7 | **Needs verification** |
+| Paper blueprint registered in ultra_simple_server.py (CSRF + tick hook) | `c9cf077`+ | Mar 7 | Working |
+| Backtest CSV individual trade storage during upload | `~28219` | Mar 7 | Working |
+| Backtest trade drilldown on dashboard cards | `9ff8afb` | Mar 7 | **Needs verification** |
+| PG migration fix: information_schema check instead of try/except ALTER | `90bf713` | Mar 7 | **Confirmed working** |
+| Backtest analytics endpoints (analytics, chart-data, daily-pnl, history) | `319357a` | Mar 7 | **Needs verification** |
+| Dashboard Paper Trading Monitor: backtest data integration | `d3c8113` | Mar 7 | **Needs verification** |
 
 ---
 

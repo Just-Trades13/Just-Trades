@@ -3,7 +3,7 @@
 > **Dual-database**: SQLite (local dev) + PostgreSQL (Railway production)
 > **ALL SQL must work on BOTH** — use `'%s' if is_postgres else '?'` (Rule 4)
 > Schema defined in: recorder_service.py ~line 2869+
-> Last verified: Feb 23, 2026
+> Last verified: Mar 7, 2026
 
 ---
 
@@ -417,4 +417,100 @@ cursor.execute(f"""
 
 ---
 
-*Source: recorder_service.py CREATE TABLE statements + MEMORY.md*
+---
+
+## TABLE: paper_trades_v3
+
+Paper trading engine v3 — persists closed trades + open positions on crash recovery.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | SERIAL/INTEGER PK | Auto-increment |
+| account | TEXT | `user_{id}` or `default` |
+| symbol | TEXT | e.g. `MNQ1!` |
+| side | TEXT | `LONG` or `SHORT` |
+| quantity | REAL | Position size |
+| entry_price | REAL | Average entry price |
+| exit_price | REAL | Average exit price (NULL if open) |
+| pnl | REAL | Realized P&L (NULL if open) |
+| mae_points | REAL | Max adverse excursion in points |
+| mfe_points | REAL | Max favorable excursion in points |
+| mae_dollars | REAL | MAE in dollars |
+| mfe_dollars | REAL | MFE in dollars |
+| capture_ratio | REAL | realized PnL / MFE |
+| hold_time_seconds | INTEGER | Time in trade |
+| exit_reason | TEXT | TP, SL, TRAIL, SIGNAL, MANUAL, etc. |
+| legs | TEXT | DCA leg breakdown (JSON) |
+| strategy_id | TEXT | Strategy/recorder link |
+| user_id | INTEGER | User who owns the trade |
+| source | TEXT | `webhook`, `backtest`, `manual` |
+| opened_at | TIMESTAMP | Entry time |
+| closed_at | TIMESTAMP | Exit time (NULL if open) |
+
+**Created by:** `paper_pipeline.py` on startup.
+
+---
+
+## TABLE: tv_backtest_imports
+
+TradingView backtest CSV/XLSX upload summary records.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | SERIAL/INTEGER PK | Auto-increment |
+| user_id | INTEGER FK→users | Uploader |
+| strategy_id | INTEGER | Links to recorder |
+| name | VARCHAR(200) | Import name |
+| symbol | VARCHAR(50) | e.g. `MNQ1!` |
+| strategy_name | VARCHAR(200) | Strategy name from CSV |
+| total_trades | INTEGER | |
+| wins | INTEGER | |
+| losses | INTEGER | |
+| win_rate | REAL | Percentage |
+| profit_factor | REAL | |
+| net_pnl | REAL | |
+| gross_profit | REAL | |
+| gross_loss | REAL | |
+| max_drawdown | REAL | |
+| avg_win | REAL | |
+| avg_loss | REAL | |
+| largest_win | REAL | |
+| largest_loss | REAL | |
+| avg_trade | REAL | |
+| long_trades | INTEGER | |
+| short_trades | INTEGER | |
+| start_date | VARCHAR(50) | First trade date |
+| end_date | VARCHAR(50) | Last trade date |
+| raw_filename | VARCHAR(500) | Original upload filename |
+| created_at | TIMESTAMP | Upload time |
+
+**Created by:** `ultra_simple_server.py` `init_db()`.
+
+---
+
+## TABLE: tv_backtest_trades
+
+Individual trade rows from TradingView backtest CSV uploads.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | SERIAL/INTEGER PK | Auto-increment |
+| import_id | INTEGER FK→tv_backtest_imports | CASCADE DELETE |
+| trade_num | INTEGER | Trade # from CSV |
+| type | VARCHAR(20) | `Entry long`, `Exit short`, etc. |
+| signal | VARCHAR(50) | Signal name |
+| date_time | VARCHAR(50) | Trade date/time string |
+| price | REAL | Entry/exit price |
+| contracts | REAL | Position size |
+| profit | REAL | Net P&L for this trade |
+| cumulative_profit | REAL | Running total P&L |
+| run_up | REAL | Favorable excursion (MFE) |
+| drawdown | REAL | Adverse excursion (MAE) |
+| created_at | TIMESTAMP | Row creation time |
+
+**Index:** `idx_tv_backtest_trades_import` on `import_id`.
+**Created by:** `ultra_simple_server.py` `init_db()`.
+
+---
+
+*Source: recorder_service.py CREATE TABLE statements + paper_pipeline.py + MEMORY.md*
