@@ -555,6 +555,9 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | same_direction_ignore in broker worker | Check at do_trade_for_account() line ~2471, before DCA logic | Uses real broker position, not stale recorded_trades | Stale DB says "in position" when broker is flat → wrong blocking decision |
 | add_position_size in broker worker | DCA override at do_trade_for_account() line ~2471 | Broker worker knows actual position state for DCA vs initial | Webhook handler uses stale DB → wrong qty on DCA adds |
 | Worker threads 10+10 not 100+100 | `_fast_webhook_worker_count=10`, `_broker_execution_worker_count=10` | GIL means extra threads = context switching, not parallelism | 200 threads thrash under 15-webhook burst, delays all signals (Bug #58) |
+| Admin-granted sub skip in Whop sync | Steps 6+7 of `_whop_membership_sync()` skip `admin_granted_*` and `mem_test_*` prefixes | These IDs don't exist in Whop — verification returns None | Sync daemon revokes admin-granted VIP/beta access (Bug #59) |
+| Paper routes init after SocketIO | `init_paper_routes(socketio=...)` block AFTER `socketio = SocketIO(...)` | Variable must exist before reference | NameError crash on startup — entire server down (Bug #60) |
+| Activation email DB-persisted cooldown | `last_activation_email` column + 24h check in Whop sync | In-memory cache lost on deploy | Email spam — one email per 30s sync cycle to every unactivated user |
 
 ---
 
@@ -737,3 +740,14 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | `close_action = action.upper()` produced 'SELL' for closing LONG. In `do_trade_for_account()`, `is_close_signal = 'SELL' in ('CLOSE',...)` → False. With DCA ON, SELL against LONG was blocked as "opposite direction blocked" (line 2557). DCA V.1 positions could NEVER close via TradingView flat signals when DCA enabled. Sending 'CLOSE' triggers the close handler (line 2406) which bypasses all filters, determines close side from broker position, and uses strategy mode fast path. |
 | **Verified** | Pending live test. |
 | **NEVER** | Change this back to `close_action` or any raw BUY/SELL value. The broker worker MUST receive 'CLOSE' for flat signals so the close handler catches it before the opposite-direction check. |
+
+### Subscription Gate — API + Page Route Protection (Mar 7, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~3804-3864 (`_api_subscription_gate`), ~10655 (`/accounts`), ~20707 (`/manual-trader`), ~10842/11335/11364/11417/11581 (account sub-pages) |
+| **Rule** | Security — non-subscribed user access control |
+| **Commits** | API gate, page decorators, account sub-pages (3 commits) |
+| **What** | (1) New `_api_subscription_gate()` before_request returns 403 JSON for non-subscribed users on all `/api/` premium routes. Skips admin-key, admin users, and whitelisted paths (`_API_NO_SUBSCRIPTION_PREFIXES`). (2) Added `@subscription_required('platform')` to `/accounts`, `/manual-trader`, and 5 account sub-pages (broker-selection, agreement, credentials, projectx-credentials, webull-credentials). |
+| **Why** | Non-subscribed logged-in users could hit `/api/manual-trade` (execute real trades), `/api/dashboard/*`, `/api/copy-trader/*`, `/api/accounts`, `/api/live-prices`, `/api/market-data`, `/api/backtest/*`, `/api/paper-trades/*`. Account sub-pages had ZERO auth — not even login. Page routes used client-side CSS banners bypassable via inspect element. |
+| **Verified** | py_compile passed. Deployed to production. |
+| **NEVER** | Remove `_api_subscription_gate` or the `_API_NO_SUBSCRIPTION_PREFIXES` tuple. Never remove `@subscription_required('platform')` from page routes. The webhook pipeline (`/webhook/`) is NOT affected — it uses token-based auth, not session auth. |

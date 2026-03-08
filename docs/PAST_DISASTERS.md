@@ -62,12 +62,20 @@
 | 51 | Feb 27, 2026 | WS duplicate task race — recv contention | `asyncio.wait(FIRST_COMPLETED)` loop created duplicate tasks per token | `002676e` | Hours |
 | 52 | Mar 3, 2026 | **3-MINUTE TRADE DELAYS — shared event loop contention** | All 10 broker workers shared ONE asyncio loop; blocking coroutine stalled ALL signals | `a1ed722` | **Weeks undetected** |
 | 53 | Mar 3-4, 2026 | **CLOSE signal never reached broker — DB updated but no order placed** | Two CLOSE handlers in process_webhook_directly(); action-based handler missing broker_execution_queue | `6699242` | **Weeks undetected** |
+| 54 | Mar 4, 2026 | DCA adds silently blocked — 3 settings incompatible with DCA strategy | signal_blocking + same_direction_ignore + DCA OFF all filter second entries | Settings fix | Minutes |
+| 55 | Mar 4, 2026 | FLAT handler sends raw SELL/BUY instead of CLOSE — DCA close blocked | `close_action = action.upper()` = 'SELL', not recognized as close signal | `dc4a598` | Hours |
+| 56 | Mar 5, 2026 | Orphaned trailing stops/TPs after close — CLOSE hardcoded tp_ticks=0 | Cancel gate `if tp_ticks > 0` always false on close | `6b7e2e8` | Hours |
+| 57 | Mar 5, 2026 | sl_type='Trail' placed static Stop, not trailing | Bracket path only checked risk_config.trail, REST path always used Stop | `b0a8bb6`+`61ca5bc` | Hours |
+| 58 | Mar 7, 2026 | Webhook perf — 15 webhooks/sec caused DCA signal delays | Webhook handler did 3-5 sync DB queries before queuing; 200 threads thrashed under GIL | `c13d121`..`fcb7983` | Minutes |
+| 59 | Mar 7, 2026 | Admin-granted subs revoked by Whop sync daemon | Reverse reconciliation verified `admin_granted_*` IDs against Whop API → got None → cancelled | `24e899d` | Minutes |
+| 60 | Mar 7, 2026 | **Startup crash — paper routes init before SocketIO defined** | `init_paper_routes(socketio=socketio)` at line 3970 but `socketio` created at line 4059 | `c9cf077` | Minutes |
+| 61 | Mar 7, 2026 | **Non-subscribed users could execute trades + access all premium APIs** | `_global_api_auth_gate` only checked login, not subscription. Page routes used client-side CSS banners (inspect-element bypassable). 5 account sub-pages had ZERO auth. | 3 commits | N/A — security fix |
 
 ---
 
 ## Key Patterns
 
-**53 disasters in ~3 months. Average recovery: 2-4 hours each. Bugs #52-53 went WEEKS undetected.**
+**61 disasters in ~3 months. Average recovery: 2-4 hours each. Bugs #52-53 went WEEKS undetected.**
 
 Almost every one was caused by:
 - (a) Editing without reading
