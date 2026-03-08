@@ -455,6 +455,32 @@ Paper trading service health.
 
 ---
 
+### Paper Trading v3 Endpoints (Blueprint)
+
+| Endpoint | Method | Auth | Purpose |
+|----------|--------|------|---------|
+| `/paper/signal` | POST | Session | Webhook signal entry |
+| `/paper/signal/<token>` | POST | Token | Token-based webhook (identifies user) |
+| `/paper/state` | GET | Session | Current positions + stats |
+| `/paper/analysis` | GET | Session | MAE/MFE analytics |
+| `/paper/history` | GET | Session | Closed trade history |
+| `/paper/flatten` | POST | Session | Emergency flatten all |
+| `/paper-trading` | GET | Login | Serve standalone dashboard |
+
+### Backtest Analytics Endpoints
+
+| Endpoint | Method | Auth | Purpose |
+|----------|--------|------|---------|
+| `/api/backtest/<id>/analytics` | GET | None | Summary stats (same format as paper-trades) |
+| `/api/backtest/<id>/chart-data` | GET | None | Cumulative P&L + drawdown for chart |
+| `/api/backtest/<id>/daily-pnl` | GET | None | Daily P&L for calendar |
+| `/api/backtest/<id>/history` | GET | None | Paginated trade history |
+| `/api/backtest/list` | GET | None | List all backtest imports |
+| `/api/backtest/upload` | POST | Login | Upload CSV/XLSX backtest |
+| `/api/backtest/<id>` | DELETE | Admin | Delete backtest import |
+
+---
+
 ### GET /api/market-data/status
 
 Available market data tokens and cached price information.

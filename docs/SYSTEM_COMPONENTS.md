@@ -51,13 +51,61 @@ What it does every 5 minutes (safety net — WS position monitor is primary):
 
 ---
 
-## Paper Trading System (ultra_simple_server.py ~351)
+## Paper Trading System (Legacy — ultra_simple_server.py ~351)
 
 - Separate database: `paper_trades` table (SQLite `paper_trades.db` or PostgreSQL)
 - Called from webhook handler for recorders in `simulation_mode=1`
 - Deduplication: `_paper_trade_dedup` prevents duplicate signals within 1.0 second
 - Tracks: entry/exit price, P&L, TP/SL levels, MFE/MAE, commission, cumulative P&L
 - **Non-blocking**: Paper trades NEVER block the broker pipeline (daemon threads only)
+
+## Paper Trading Engine v3 (paper_engine_v3.py + paper_pipeline.py + paper_routes.py)
+
+**Added Mar 7, 2026.** Completely separate from live broker execution.
+
+### Architecture
+```
+TradingView Alert → POST /paper/signal (or /paper/signal/<token>)
+    → paper_routes.py Blueprint
+    → PaperPipeline.on_webhook()
+    → PaperTradingEngine.on_signal()   ← in-memory engine
+    → DB persist (paper_trades_v3)     ← daemon thread, never blocks
+    → SocketIO broadcast (/paper ns)   ← daemon thread
+```
+
+### Files
+| File | Purpose |
+|------|---------|
+| `paper_engine_v3.py` | In-memory trading engine: positions, MAE/MFE, DCA, TP/SL/trail |
+| `paper_pipeline.py` | Orchestrator: engine + PostgreSQL + SocketIO + crash recovery |
+| `paper_routes.py` | Flask Blueprint (REST + SocketIO `/paper` namespace) |
+| `templates/paper_trading.html` | Standalone paper trading dashboard |
+| `static/js/paper_trading.js` | Dashboard JS (SocketIO client, DOM rendering) |
+| `static/css/paper_trading.css` | Dashboard styles (dark theme) |
+
+### Key Design Rules
+- **ZERO contact** with `broker_execution_queue`, `do_trade_for_account()`, `execute_trade_simple()`
+- All DB writes + SocketIO broadcasts run on **daemon threads** (fire-and-forget)
+- Per-user isolation via `user_{id}` account keys + session auth
+- Uses `FUTURES_SPECS` + `calculate_pnl()` from `tv_price_service.py`
+- `threading.RLock()` for deadlock-safe locking (Bug: close signal deadlock)
+- PostgreSQL compatible (`information_schema.columns` for migrations)
+
+### Backtest CSV Integration
+- CSV upload stores individual trades in `tv_backtest_trades` table
+- 4 API endpoints serve backtest data in same format as paper-trades:
+  - `GET /api/backtest/<id>/analytics` — summary stats
+  - `GET /api/backtest/<id>/chart-data` — cumulative P&L + drawdown
+  - `GET /api/backtest/<id>/daily-pnl` — calendar data
+  - `GET /api/backtest/<id>/history` — paginated trade history
+- Dashboard strategy dropdown shows both Live Recorders and Backtest Imports
+- Selecting a backtest populates all dashboard panels (P&L, chart, calendar, history)
+
+### Integration Points in ultra_simple_server.py (sacred file)
+- Line ~3854: `/paper/` in CSRF exempt tuple
+- Lines ~4063-4070: Blueprint registration (try/except, fails gracefully)
+- Lines ~34916-34923: Tick feed hook in `on_price_update()` (fire-and-forget)
+- Lines ~28219-28240: Backtest trade storage during CSV upload
 
 ---
 
