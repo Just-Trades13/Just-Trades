@@ -28271,6 +28271,13 @@ def api_backtest_upload():
         symbol = xlsx_symbol
         strategy_name_val = xlsx_strategy_name
 
+        # CSV fallback: extract symbol from filename (e.g. "JustTrades_DCA_V.1_CME_MINI_MNQ1!_2026-03-07.csv")
+        if not symbol and file.filename:
+            import re
+            sym_match = re.search(r'([A-Z]{2,4}\d?!)', file.filename)
+            if sym_match:
+                symbol = sym_match.group(1)
+
         # --- Store in database ---
         db = SessionLocal()
         try:

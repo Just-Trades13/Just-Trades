@@ -5055,8 +5055,8 @@
                 const sideBadgeClass = (sideUpper === 'LONG' || sideUpper === 'BUY') ? 'side-badge--long' : 'side-badge--short';
                 const sideLabel = (sideUpper === 'BUY' || sideUpper === 'LONG') ? 'LONG' : 'SHORT';
 
-                // Recorder/strategy name
-                const recorderName = await getRecorderName(trade.recorder_id);
+                // Recorder/strategy name — use recorder_name directly for backtests (no recorder_id)
+                const recorderName = trade.recorder_name || (trade.recorder_id ? await getRecorderName(trade.recorder_id) : 'Backtest');
                 const simpleSymbol = (trade.symbol || '').split(':').pop().replace('1!', '');
 
                 // Format times
