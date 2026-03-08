@@ -10840,6 +10840,7 @@ def create_account():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/accounts/<int:account_id>/broker-selection')
+@subscription_required('platform')
 def broker_selection(account_id):
     """Render the broker selection page for a new account"""
     return render_template('broker_selection.html', account_id=account_id)
@@ -11333,6 +11334,7 @@ BROKER_FEATURES = {
 
 
 @app.route('/accounts/<int:account_id>/connect/<broker_slug>/agreement')
+@subscription_required('platform')
 def broker_agreement(account_id, broker_slug):
     """Render the broker agreement page before connecting.
 
@@ -11362,6 +11364,7 @@ def broker_agreement(account_id, broker_slug):
 
 
 @app.route('/accounts/<int:account_id>/credentials')
+@subscription_required('platform')
 def collect_credentials(account_id):
     """Render credentials collection page for Tradovate account"""
     return render_template('collect_credentials.html', account_id=account_id)
@@ -11415,6 +11418,7 @@ def store_credentials(account_id):
 # ============================================================
 
 @app.route('/accounts/<int:account_id>/projectx-credentials')
+@subscription_required('platform')
 def projectx_credentials(account_id):
     """Render ProjectX credentials collection page"""
     return render_template('projectx_credentials.html', account_id=account_id)
@@ -11579,6 +11583,7 @@ def projectx_connect(account_id):
 # ============================================================
 
 @app.route('/accounts/<int:account_id>/webull-credentials')
+@subscription_required('platform')
 def webull_credentials(account_id):
     """Render Webull credentials collection page"""
     return render_template('webull_credentials.html', account_id=account_id)
