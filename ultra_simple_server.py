@@ -5816,6 +5816,24 @@ def init_db():
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_tv_backtest_trades_import ON tv_backtest_trades(import_id)')
 
+    # One-time migration: backfill symbol from raw_filename for existing imports
+    try:
+        ph = '%s' if is_postgres else '?'
+        cursor.execute('SELECT id, raw_filename FROM tv_backtest_imports WHERE symbol IS NULL AND raw_filename IS NOT NULL')
+        null_sym_rows = cursor.fetchall()
+        if null_sym_rows:
+            import re
+            for row in null_sym_rows:
+                r = dict(row) if not isinstance(row, dict) else row
+                rid = r.get('id') or row[0]
+                fname = r.get('raw_filename') or row[1] or ''
+                m = re.search(r'([A-Z]{2,4}\d?!)', fname)
+                if m:
+                    cursor.execute(f'UPDATE tv_backtest_imports SET symbol = {ph} WHERE id = {ph}', (m.group(1), rid))
+            logger.info(f"Backfilled symbol for {len(null_sym_rows)} backtest imports")
+    except Exception as e:
+        logger.warning(f"Backtest symbol backfill skipped: {e}")
+
     conn.commit()
     conn.close()
 
