@@ -10653,10 +10653,8 @@ def api_insiders_watchlist_signals():
 # =============================================================================
 
 @app.route('/accounts')
+@subscription_required('platform')
 def accounts():
-    # Require login if auth is available
-    if USER_AUTH_AVAILABLE and not is_logged_in():
-        return redirect(url_for('login'))
     # Inject the fetch MD token script into the template context
     return render_template('account_management.html', include_md_token_script=True)
 
@@ -20705,30 +20703,22 @@ def control_center():
                               current_user_id=None)
 
 @app.route('/manual-trader')
+@subscription_required('platform')
 def manual_trader_page():
-    # Require login if auth is available
-    if USER_AUTH_AVAILABLE and not is_logged_in():
-        return redirect(url_for('login'))
-    
-    # Check platform subscription
+    # subscription_required handles login + subscription check
+    # Only subscribed users and admins reach this point
     has_platform_subscription = True
     user_tier = 'none'
     if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
         user = get_current_user()
         if user:
-            from subscription_models import get_user_subscription, get_user_plan_tier
-            platform_sub = get_user_subscription(user.id, plan_type='platform')
-            has_platform_subscription = platform_sub is not None
             user_tier = get_user_plan_tier(user.id)
-            if user.is_admin:
-                has_platform_subscription = True
-    
+
     # Check advanced copy trader feature access
     has_advanced_copy_trader = False
     if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
         user = get_current_user()
         if user:
-            from subscription_models import check_feature_access
             has_advanced_copy_trader = check_feature_access(user.id, 'advanced_copy_trader')
             if user.is_admin:
                 has_advanced_copy_trader = True
