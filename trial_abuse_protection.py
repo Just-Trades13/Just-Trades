@@ -27,8 +27,8 @@ logger = logging.getLogger('trial_abuse')
 # CONFIGURATION
 # ============================================================================
 
-# Disposable email domains to flag
-DISPOSABLE_EMAIL_DOMAINS = {
+# Fallback disposable domains (used if vendored list is missing)
+_FALLBACK_DISPOSABLE_DOMAINS = {
     'tempmail.com', 'throwaway.email', 'guerrillamail.com', 'mailinator.com',
     'temp-mail.org', '10minutemail.com', 'fakeinbox.com', 'trashmail.com',
     'sharklasers.com', 'guerrillamail.info', 'grr.la', 'guerrillamail.biz',
@@ -39,6 +39,20 @@ DISPOSABLE_EMAIL_DOMAINS = {
     'discardmail.com', 'spamgourmet.com', 'getairmail.com', 'moakt.com',
     'tempmailo.com', 'burnermail.io', 'inboxkitten.com'
 }
+
+def _load_disposable_domains() -> set:
+    """Load disposable email domains from vendored list, fallback to hardcoded."""
+    domains_file = os.path.join(os.path.dirname(__file__), 'data', 'disposable_email_domains.txt')
+    try:
+        with open(domains_file, 'r') as f:
+            domains = {line.strip().lower() for line in f if line.strip() and not line.startswith('#')}
+        if domains:
+            return domains
+    except FileNotFoundError:
+        pass
+    return _FALLBACK_DISPOSABLE_DOMAINS
+
+DISPOSABLE_EMAIL_DOMAINS = _load_disposable_domains()
 
 # How long to remember trial usage (days)
 TRIAL_MEMORY_DAYS = 365
